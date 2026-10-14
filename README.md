@@ -152,7 +152,67 @@ python tools/make_icons.py
 
 ---
 
-## 五、目录结构
+## 五、在 Windows 上怎么测试
+
+按"花时间最少"排序，三种方式都可以，推荐前两种配合用：
+
+### 方式 A：浏览器里试（10 秒，改界面用这个）
+
+双击 [app/src/main/assets/www/index.html](app/src/main/assets/www/index.html) 就能打开，功能全部可用（查和弦、看指板、点卡片、试听）。
+按 `F12` 打开开发者工具，再按 `Ctrl+Shift+M` 切到手机模拟视图（选 iPhone/Android 尺寸），看到的就是手机上的布局。
+
+```bash
+python tools/run_tests.py --keep-open    # 跑完自检后自动用浏览器打开界面
+```
+
+注意：`file://` 下部分浏览器会拦截音频自动播放，点一下 ♪ 按钮即可（需要用户手势）。
+
+### 方式 B：装到真手机（最真实，1 分钟）
+
+**最省事**：把 [dist/ChordHelper-1.0.0.apk](dist/ChordHelper-1.0.0.apk) 用微信/数据线/网盘传进手机，点击安装（首次需要允许"安装未知来源应用"）。
+
+**想用数据线自动装**（需要手机开启 USB 调试）：
+
+```bash
+python tools/install_to_phone.py --run
+```
+
+脚本会自动找 adb（项目内 SDK → 系统 PATH → 手机助手自带的 adb，比如 vivo PC 套件的
+`D:\program\vivo\pcsuite\adb\adb.exe`），装完顺便启动 App。也可以用手机助手类工具
+（互传/手机管家/投屏）把 APK 推过去安装，还能在电脑上看手机画面。
+
+手机没开 USB 调试时脚本会打印开启步骤。
+
+### 方式 C：电脑上跑安卓模拟器（不插手机，5 分钟）
+
+本项目已经装好了模拟器，可以直接跑：
+
+```bash
+python tools/run_on_emulator.py                 # Android 14（API 34），无窗口，自动截图
+python tools/run_on_emulator.py --window        # 显示模拟器窗口，自己点着玩
+python tools/run_on_emulator.py --api 21        # 换成 Android 5.0 验证最低版本
+python tools/run_on_emulator.py --keep          # 跑完不关闭，方便继续手动测
+```
+
+它会自动建 AVD、启动模拟器、安装 APK、启动 App、截图到 `build/emulator/`，并把
+`logcat` 里的应用/WebView 日志存成 `build/emulator/logcat.txt`（排查白屏、崩溃很有用）。
+
+> 前置条件：Windows 需要开启硬件加速（Hyper-V / WHPX）。用 `emulator -accel-check` 可查看，
+> 输出 `WHPX ... is installed and usable` 就没问题。这台机器已验证可用。
+> 想用自己的 Android Studio 模拟器也可以，直接在 Android Studio 里选设备运行即可。
+
+### 一条命令跑完所有自检
+
+```bash
+python tools/run_tests.py
+```
+
+会依次跑：引擎自检（60 条断言）→ 界面自检（4 种视口 × 61 条断言）→ APK 校验（包名/权限/签名/资源一致性），
+全部通过时退出码为 0，可以直接接到 CI 上。加 `-v` 看细节。
+
+---
+
+## 六、目录结构
 
 ```
 chord/
@@ -182,33 +242,35 @@ chord/
 │               ├── audio.js           WebAudio 拨弦合成
 │               └── app.js             状态管理 + 交互
 ├── tools/
+│   ├── run_tests.py          一条命令跑完全部自检（Windows 上最常用）
+│   ├── install_to_phone.py   用数据线装到手机（自动找 adb）
+│   ├── run_on_emulator.py    在电脑模拟器上跑并截图（自动找加速/建 AVD）
 │   ├── build_apk.py          不用 Gradle 直接打 APK
 │   ├── make_icons.py         生成 PNG 图标
 │   ├── selftest.html         引擎自检（乐理 + 算法 + 渲染断言）
-│   └── uitest.html           界面交互自检（模拟点击 + 断言）
+│   └── uitest.html           界面交互自检（模拟点击 + 布局体检）
+├── build/emulator/           模拟器上的运行截图与日志（跑 run_on_emulator.py 生成）
 └── dist/ChordHelper-1.0.0.apk
 ```
 
 ---
 
-## 六、自检与测试
+## 七、自检细节（可选）
 
-两个测试页面都是纯 HTML，任何浏览器都能跑；也可以用命令行跑（headless）：
+两个测试页面都是纯 HTML，任何浏览器打开就能看结果，也可以用无头浏览器跑：
 
 ```bash
 # 引擎自检：乐理计算、指法合法性（音高/跨度/低音/连续性逐条校验）、渲染坐标、性能
 chrome --headless=new --dump-dom file:///<绝对路径>/tools/selftest.html
 
-# 界面自检：模拟点击主调/级数/属性/卡片/开关，断言页面结果
-chrome --headless=new --allow-file-access-from-files \
-       --dump-dom file:///<绝对路径>/tools/uitest.html
+# 界面自检：模拟点击主调/级数/属性/卡片/开关，断言页面结果 + 布局体检
+chrome --headless=new --allow-file-access-from-files        --dump-dom "file:///<绝对路径>/tools/uitest.html?w=390&h=844"
 ```
 
-（Windows 上 Chrome 路径通常是 `C:\Program Files\Google\Chrome\Application\chrome.exe`。）
+（`?w=360&h=640` 可以换视口尺寸，用来回归小屏布局。Windows 上 Chrome 通常在
+`C:\Program Files\Google\Chrome\Application\chrome.exe`。）
 
----
-
-## 七、常见问题
+## 八、常见问题
 
 **Q：为什么某个和弦查不到指法？**
 默认条件比较严格：至少 4 根弦发声、跨度不超过 4 品、低音必须是根音、发声弦必须连续。放宽其中任意一条都能查到更多，页面在查不到时也会提示。想看转位指法，关掉「低音必须是根音」。
@@ -222,11 +284,20 @@ chrome --headless=new --allow-file-access-from-files \
 **Q：能改成其他调弦吗？**
 可以，`js/chord.js` 顶部的 `TUNING` 数组就是 6 根弦的 MIDI 音高，改掉即可（例如 Drop D 把第一项改成 38）。
 
+**Q：在很老的手机上界面为什么是简化样式？**
+Android 5.x 出厂自带的 WebView 是 2014 年的 Chrome 37，不支持 CSS 变量，所以颜色/间距会降级成简化版
+（功能完全正常，界面会多一条提示条）。到应用商店更新「Android System WebView」就恢复完整样式——
+真机上 WebView 是独立更新的，绝大多数设备早已是新版本。本项目已在 Android 5.0 模拟器上实测过这条降级路径。
+
+**Q：怎么确认我的手机能不能跑？**
+装上去打开即可。如果是白屏或崩溃，用数据线连电脑跑 `adb logcat -s ChordHelper:I`，
+App 会把页面标题、卡片数量、页面底色、脚本错误都打进日志（`dom={...}` 那一行），一眼能看出问题在哪。
+
 **Q：为什么界面是网页做的？**
 因为指板/和弦图本质是 2D 矢量绘制，用 SVG 表达最直接，改一行刷新就能看到效果，也方便在电脑浏览器里调试。详细取舍见 `process.md`。
 
 ---
 
-## 八、许可与声明
+## 九、许可与声明
 
 这是一个 demo 项目，代码可自由使用与修改。和弦名称、指法推断仅为学习参考，弹奏请以你的耳朵和老师为准。

@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  浅色（默认）：用 Light 系主题，让 isLightTheme=true。
+  这一点很关键：WebView 的 prefers-color-scheme 跟随 App 主题，
+  如果这里用的是深色主题，网页会渲染成深色而窗口底色是浅色，顶部就会割裂。
+  深色模式在 values-night/themes.xml 里覆盖。
+-->
 <resources>
-    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/app_bg</item>
         <item name="android:statusBarColor">@color/app_bg</item>
         <item name="android:navigationBarColor">@color/app_bg</item>
         <item name="android:colorBackground">@color/app_bg</item>
+        <item name="android:windowContentTransitions">false</item>
     </style>
 </resources>

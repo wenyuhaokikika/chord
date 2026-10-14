@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色（系统开启深色模式时生效）：深色主题 + 深色窗口底色，和网页深色主题一致 -->
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/app_bg</item>
+        <item name="android:statusBarColor">@color/app_bg</item>
+        <item name="android:navigationBarColor">@color/app_bg</item>
+        <item name="android:colorBackground">@color/app_bg</item>
+        <item name="android:windowContentTransitions">false</item>
+    </style>
+</resources>

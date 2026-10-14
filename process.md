@@ -356,6 +356,10 @@ launchable-activity: name='com.chord.helper.MainActivity'
 
 ## 10. 测试方法（没有设备也能验证）
 
+分两层：**网页层**用无头浏览器跑断言（快、可重复），**原生层**用模拟器跑真机流程（慢、但只有这里能发现 WebView/主题/字体的问题）。
+
+### 10.1 网页层：把逻辑变成可断言的数据
+
 核心思路：**把纯逻辑与渲染都做成可断言的字符串/数据，用无头浏览器跑断言**。两个测试页放在 `tools/`：
 
 - `selftest.html`（引擎自检）：
@@ -389,6 +393,40 @@ chrome --headless=new --allow-file-access-from-files --dump-dom file:///.../tool
 | 直达链接传了非法值（`#acc=x`）会在界面上显示出 `undefined` | 用非法 hash 跑一遍页面并断言输出里不含 `undefined`/`NaN` |
 
 最后一个值得单独讲：指板的九处坐标断言（按弦点、空弦圈、闷弦 ×、横按条、把位窗口、品记）都是"算出期望值再和 SVG 字符串比对"，所以像"音名标错一根弦"这种错误不可能蒙混过关——我第一次看截图误以为高音 e 弦标成了 E，正是靠这套断言确认它其实是正确的 F#（8.6px 的小字在缩略图里很难分辨）。
+
+### 10.3 原生层：在模拟器上真跑一遍
+
+网页层全绿不代表装进 APK 就能看——WebView 的版本、系统主题、系统字体、窗口配置都可能出问题。
+`tools/run_on_emulator.py` 把这一层也自动化了：建 AVD → 启动（无窗口 + 硬件加速）→ 安装 → 启动 App
+→ 等 App 自己报告页面加载完成 → 截图 → 收集 logcat。实测：
+
+| 环境 | 结果 |
+| --- | --- |
+| Android 14（API 34，WebView 113） | 冷启动约 2s 出内容；指板/卡片/交互全部正常；日志无异常 |
+| Android 5.0（API 21，出厂 WebView 37） | 逻辑完全正常（120 个指法、DOM 结构正确、无 JS 错误），样式按预期降级 |
+
+真机上抓到的问题（都不是网页层能发现的）：
+
+| 问题 | 原因与修复 |
+| --- | --- |
+| 顶部一条浅色状态栏、下面却是深色界面 | App 用的是 `Theme.Material`（深色系），WebView 据此把 `prefers-color-scheme` 判成 dark 渲染深色；而系统是浅色，原生窗口底色按 `uiMode` 取了浅色。改成 `values/` 用 `Theme.Material.Light`、`values-night/` 用深色主题，两边就都跟随系统了 |
+| 切换系统深浅色后原生栏颜色不更新 | manifest 声明了 `configChanges="uiMode"`，Activity 不重建，于是颜色只在 `onCreate` 设了一次。补 `onConfigurationChanged` 重新上色 |
+| API 21/22 上状态栏文字看不见 | `SYSTEM_UI_FLAG_LIGHT_STATUS_BAR` 是 API 23 才有的，老版本上无效。这两版改为把状态栏压深、配白色图标 |
+| API 21 上 ⚙ 图标显示成方框 | 2014 年的系统字体没有 U+2699 字形。改用内联 SVG 画图标，不再依赖字体 |
+| API 21 上整个界面变成黑白骨架 | 出厂 WebView 是 Chrome 37，不支持 CSS 变量，`var()` 声明被整条丢弃。加了一层 `@supports not (color: var(--x))` 降级样式（固定色 + 行内居中 + 用 margin 代替 flex gap），并在检测到老引擎时插入提示条引导更新 WebView |
+
+顺带说一个调试技巧：**让 App 自己把关键状态打进日志**。`MainActivity` 在 `onPageFinished` 里用
+`evaluateJavascript` 回读一次 DOM（标题、卡片数、页面底色、`window.__err`）并 `Log.i` 出来。
+第一次跑模拟器时截图是全白的，但日志显示 `dom={"cards":14,"chord":"C","err":null}`——
+一眼就知道页面其实渲染好了，是截图时机/合成的问题，而不是页面出错；否则很容易往错误方向排查。
+页面侧也加了 `window.onerror` 兜底，出错时会在页面顶部弹一条红条并把错误写进 `window.__err`。
+
+### 10.4 一条命令
+
+```bash
+python tools/run_tests.py        # 引擎自检 + 界面自检（4 视口）+ APK 校验
+python tools/run_on_emulator.py  # 真机（模拟器）跑一遍并截图、收日志
+```
 
 ---
 

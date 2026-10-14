@@ -384,6 +384,18 @@ body.sheet-open { overflow: hidden; }
 .help li { margin-bottom: 5px; }
 .help b { color: var(--text); }
 
+/* 老 WebView 提示条（只在样式降级时由 JS 插入） */
+.legacy-tip {
+  margin: 10px 14px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ==========================================================================
    查询条件面板：底部抽屉。
    手机上“选和弦”和“看指板”必须能同时看到，所以条件不占首屏，
@@ -491,3 +503,69 @@ body.sheet-open { overflow: hidden; }
 .nk-open { fill: none; stroke: var(--good); stroke-width: 2; }
 .nk-open-text { fill: var(--good); font-size: 8.5px; font-weight: 700; font-family: inherit; }
 .nk-mute { fill: var(--muted); font-size: 14px; font-family: inherit; }
+
+/* ==========================================================================
+   老引擎降级层
+   --------------------------------------------------------------------------
+   Android 5.x 出厂自带的 WebView 是 Chrome 37~48，不认识 CSS 变量（var()），
+   于是上面那些用变量的声明会被整条丢弃，页面只剩黑白骨架（功能正常但很难看）。
+   这里用 @supports 探测一次：只有在不支持 var() 的引擎上，才补一套固定颜色的
+   基础样式。现代 WebView / 浏览器会跳过整块，完全不受影响。
+   另外老引擎也没有 flex 的 gap、grid、min()，这几处一并给出兜底。
+   （真机上的 WebView 会随应用商店更新，通常不会走到这里；走到也有可用界面。）
+   ========================================================================== */
+@supports not (color: var(--chord-probe)) {
+  html, body { background: #f4f5f8; color: #171a21; }
+  .app-header { background: #ffffff; border-bottom: 1px solid #dfe3ec; }
+  .logo { background: #2a2118; border: 1px solid #dfe3ec; }
+  .ghost-btn, .round-btn, .mini-toggle, .seg button {
+    background: #f0f2f7; border: 1px solid #dfe3ec; color: #e8890c;
+  }
+  .mini-toggle.on { background: #e8890c; border-color: #e8890c; color: #ffffff; }
+  .seg { border: 1px solid #dfe3ec; }
+  .chip { background: #ffffff; border: 1px solid #dfe3ec; color: #171a21; }
+  .chip.sm { background: #ffffff; }
+  .chip.on, .chip.alt.on { background: #e8890c; border-color: #e8890c; color: #ffffff; }
+  .chip .tag { color: #6a7285; }
+  .advanced, .card, .sheet { background: #ffffff; }
+  .card { border: 1px solid #dfe3ec; }
+  .card.on { border-color: #e8890c; }
+  .empty { border: 1px dashed #dfe3ec; color: #6a7285; }
+  .neck-section { background: #ffffff; border-color: #dfe3ec; }
+  .backdrop { background: #000000; opacity: 0; }
+  .backdrop.open { opacity: .5; }
+  .sheet { border-top: 1px solid #dfe3ec; max-height: 60vh; }
+  .switch input { accent-color: auto; }
+  .chord-name { color: #e8890c; }
+  .legacy-tip { background: #fff8e8; border: 1px solid #e8890c; color: #171a21; }
+  .notes, .brand p, .field > label, .label-row > label, .qname, .pos-head span,
+  .results-head span, .card .tab, .card .badge, .neck-info, .app-footer { color: #6a7285; }
+
+  /* 圆角按钮靠 grid 居中的，这里退回行内居中 */
+  .round-btn, .logo { display: block; text-align: center; line-height: 32px; }
+
+  /* SVG 图元：没有变量时给固定色 */
+  .cb-fret, .cb-string { stroke: #c8cedb; }
+  .cb-nut, .nk-nut { stroke: #171a21; }
+  .cb-dot, .cb-barre, .nk-dot, .nk-barre { fill: #e8890c; }
+  .cb-dot-text, .nk-dot-text { fill: #ffffff; }
+  .cb-open, .nk-open { fill: none; stroke: #148f57; }
+  .cb-mute, .cb-frlabel, .cb-stringname,
+  .nk-fretnum, .nk-stringname, .nk-mute { fill: #6a7285; }
+  .nk-wood { fill: #efe7dc; stroke: #dfe3ec; }
+  .nk-fret { stroke: #c8cedb; }
+  .nk-string { stroke: #6a7285; }
+  .nk-marker { fill: #c8cedb; }
+  .nk-window { fill: #2f6fd0; opacity: .12; }
+  .nk-faint { fill: #2f6fd0; opacity: .22; }
+  .nk-faint-root { fill: #2f6fd0; opacity: .40; }
+  .nk-open-text { fill: #148f57; }
+
+  /* 老引擎没有 flex gap，用 margin 补上关键间距 */
+  .chip-row .chip { margin-right: 7px; }
+  .cards .card { margin-right: 9px; }
+  .neck-toolbar .round-btn { margin-right: 8px; }
+  .brand .logo { margin-right: 10px; }
+  .chip-row { display: -webkit-box; }
+  .chip-row .chip { display: inline-block; }
+}

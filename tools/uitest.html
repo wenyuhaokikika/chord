@@ -237,6 +237,8 @@
       closeSheetIfOpen();
       var vw = win.innerWidth;
       info('视口 ' + vw + 'x' + win.innerHeight);
+      var supportsVars = !!(win.CSS && win.CSS.supports && win.CSS.supports('--x', '0'));
+      info('CSS 变量支持: ' + supportsVars);
       ok(doc.documentElement.scrollWidth <= vw + 1,
          '页面无横向溢出（scrollWidth=' + doc.documentElement.scrollWidth + '）');
 

@@ -9,6 +9,21 @@
 </head>
 <body>
 
+<!-- 页面脚本异常兜底：真的出问题时显示出来，而不是给用户一片空白 -->
+<script>
+window.__err = null;
+window.onerror = function (msg, src, line) {
+  window.__err = msg + ' @' + String(src).split('/').pop() + ':' + line;
+  try {
+    var bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:999;background:#b3261e;' +
+      'color:#fff;font:12px/1.5 monospace;padding:6px 10px;white-space:pre-wrap';
+    bar.textContent = '页面脚本出错：' + window.__err;
+    document.body.appendChild(bar);
+  } catch (e) { /* 兜底里的兜底 */ }
+};
+</script>
+
 <!-- ================= 顶部信息 ================= -->
 <header class="app-header">
   <div class="brand">
@@ -31,13 +46,27 @@
 <!-- ================= 指板视图（吸顶，首屏可见） ================= -->
 <section class="neck-section" id="neckSection">
   <div class="neck-toolbar">
-    <button class="round-btn" id="btnSettings" type="button" title="查询条件">&#9881;</button>
+    <button class="round-btn" id="btnSettings" type="button" title="查询条件" aria-label="查询条件">
+      <!-- 用内联 SVG 而不是 ⚙ 字符：老系统字体里没有这个字形，会显示成方框 -->
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+        <circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="2.2"/>
+        <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+        <path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.2 2.2M16.3 16.3l2.2 2.2M18.5 5.5l-2.2 2.2M7.7 16.3l-2.2 2.2"
+              stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+    </button>
     <button class="round-btn" id="btnPrev" type="button" title="上一个指法">&#9664;</button>
     <div class="neck-title">
       <strong id="voicingLabel">开放把位</strong>
     </div>
     <button class="round-btn" id="btnNext" type="button" title="下一个指法">&#9654;</button>
-    <button class="round-btn" id="btnPlay" type="button" title="试听">&#9834;</button>
+    <button class="round-btn" id="btnPlay" type="button" title="试听" aria-label="试听">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+        <path d="M4 9.4h3.3L12 5.4v13.2L7.3 14.6H4z" fill="currentColor"/>
+        <path d="M15.4 9.2a4.3 4.3 0 010 5.6M17.9 6.7a7.7 7.7 0 010 10.6"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
   </div>
   <div class="neck-scroll" id="neckScroll">
     <div id="neckBox"></div>

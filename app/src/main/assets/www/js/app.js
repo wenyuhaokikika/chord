@@ -586,6 +586,23 @@
   }
 
   /* ----------------------------- 启动 ----------------------------- */
+  /* 老版本系统 WebView（Android 5.x 自带的 Chrome 37~48）不支持 CSS 变量，
+     样式会降级成简化版。这里提示用户更新一下 WebView 就能恢复完整界面。 */
+  function checkLegacyWebView() {
+    /* CSS.supports 本身是 Chrome 28+ 就有的；连它都没有说明更老，同样要提示 */
+    var supported = !!(global.CSS && global.CSS.supports &&
+      (global.CSS.supports('--chord-probe', '0') ||
+       global.CSS.supports('color', 'var(--chord-probe)')));
+    if (supported) return;
+    try {
+      var tip = document.createElement('div');
+      tip.className = 'legacy-tip';
+      tip.textContent = '当前系统 WebView 版本过旧（不支持 CSS 变量），界面已降级为简化样式。'
+        + '请到应用商店更新「Android System WebView」后重新打开。';
+      var header = document.querySelector('.app-header');
+      if (header && header.parentNode) header.parentNode.insertBefore(tip, header.nextSibling);
+    } catch (e) { /* 提示失败不影响使用 */ }
+  }
   /* 支持 #key=2&scale=minor&degree=6&q=m7&maxFret=15 形式的直达参数 */
   function applyHash() {
     var hash = (global.location && global.location.hash) ? global.location.hash.replace(/^#/, '') : '';
@@ -628,6 +645,7 @@
     bind();
     $('btnDiatonic7').classList.toggle('on', state.diatonic7);
     refresh(false);
+    checkLegacyWebView();
     if (state.openSheet) openSheet();
     global.CHORD_STATE = state;   /* 方便调试 / 自动化测试 */
   }

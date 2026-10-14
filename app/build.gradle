@@ -1,0 +1,35 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.chord.helper'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.chord.helper"
+        minSdk 21                 /* Android 5.0+ */
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            /* Demo 里让 release 包也能直接安装：复用 debug 签名。
+               正式发布请替换成自己的签名配置。 */
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}

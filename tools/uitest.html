@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>UI 交互测试</title>
+<style>body{font:13px monospace;margin:0}iframe{width:390px;height:844px;border:0;position:absolute;right:-9999px}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+<pre id="out">running...</pre>
+<iframe id="f" src="../app/src/main/assets/www/index.html"></iframe>
+<script>
+(function () {
+  var lines = [], fails = 0;
+  function ok(cond, msg) { lines.push((cond ? 'PASS  ' : 'FAIL  ') + msg); if (!cond) fails++; }
+  function info(msg) { lines.push('      ' + msg); }
+
+  var frame = document.getElementById('f');
+  var doc, win;
+
+  /* 支持 ?w=360&h=640 指定被测视口尺寸，用于多机型布局回归 */
+  var qs = (location.search || '').replace(/^\?/, '').split('&');
+  var vw0 = 390, vh0 = 844;
+  for (var qi = 0; qi < qs.length; qi++) {
+    var kv = qs[qi].split('=');
+    if (kv[0] === 'w') vw0 = Number(kv[1]);
+    if (kv[0] === 'h') vh0 = Number(kv[1]);
+  }
+  frame.style.width = vw0 + 'px';
+  frame.style.height = vh0 + 'px';
+
+  function $(id) { return doc.getElementById(id); }
+  function click(el) {
+    var ev = doc.createEvent('MouseEvents');
+    ev.initMouseEvent('click', true, true, win, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+    el.dispatchEvent(ev);
+  }
+  function clickChip(group, value) {
+    var list = doc.querySelectorAll('[data-group="' + group + '"]');
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].getAttribute('data-value') === String(value)) { click(list[i]); return true; }
+    }
+    return false;
+  }
+  function clickAcc(v) {
+    click(doc.querySelector('#accChips [data-acc="' + v + '"]'));
+  }
+  function closeSheetIfOpen() {
+    if (doc.getElementById('sheet') && doc.getElementById('sheet').classList.contains('open')) {
+      click(doc.getElementById('sheetDone'));
+    }
+  }
+  function chipExists(group, value) {
+    var list = doc.querySelectorAll('[data-group="' + group + '"]');
+    for (var i = 0; i < list.length; i++) if (list[i].getAttribute('data-value') === String(value)) return true;
+    return false;
+  }
+
+  frame.onload = function () {
+    try {
+      doc = frame.contentDocument;
+      win = frame.contentWindow;
+
+      /* --- 1. 初始状态 --- */
+      ok($('chordName').textContent === 'C', '初始和弦名 = C （实际 ' + $('chordName').textContent + '）');
+      ok($('chordRoman').textContent.indexOf('I 级') === 0, '初始级数标注 = I 级（实际 ' + $('chordRoman').textContent + '）');
+      ok($('chordNotes').textContent.indexOf('C(1)') === 0, '组成音显示：' + $('chordNotes').textContent);
+      var st = win.CHORD_STATE;
+      ok(st.voicings.length > 50, '初始指法数 ' + st.voicings.length);
+      ok(doc.querySelectorAll('.pos-group').length >= 10, '把位分组 ' + doc.querySelectorAll('.pos-group').length + ' 组');
+      ok(doc.querySelectorAll('.card').length > 0, '首屏已渲染卡片 ' + doc.querySelectorAll('.card').length + ' 张');
+      var neck = doc.querySelector('#neckBox svg');
+      ok(!!neck, '指板 SVG 已生成');
+      ok(neck && Number(neck.getAttribute('width')) > 1000, '指板宽度 ' + (neck ? neck.getAttribute('width') : '-') + 'px（24 品）');
+      var dots = doc.querySelectorAll('#neckBox .nk-dot');
+      ok(dots.length >= 3, '指板上高亮 ' + dots.length + ' 个按弦点（x32010 = 3 个）');
+      ok(doc.querySelector('#neckInfo').textContent.indexOf('x 3 2 0 1 0') > -1, '默认指法 = ' + doc.querySelector('#neckInfo').textContent);
+
+      /* --- 2. 换主调 --- */
+      clickChip('key', 2);
+      ok($('chordName').textContent === 'D', '切到 D 调 → ' + $('chordName').textContent);
+      ok($('subTitle').textContent.indexOf('D 大调') === 0, '副标题 ' + $('subTitle').textContent);
+
+      /* --- 3. 换级数 --- */
+      clickChip('degree', 5);
+      ok($('chordName').textContent === 'A', 'D 调 5 级 → ' + $('chordName').textContent);
+      clickChip('degree', 2);
+      ok($('chordName').textContent === 'Em' || $('chordName').textContent === 'E', 'D 调 2 级 → ' + $('chordName').textContent);
+
+      /* --- 4. 变音 --- */
+      clickChip('degree', 3);
+      clickAcc(-1);
+      ok($('chordName').textContent === 'F', 'D 调 ♭3 级 → ' + $('chordName').textContent + '（应为 F）');
+      clickAcc(0);
+      ok($('chordName').textContent === 'F#', '恢复本音 → ' + $('chordName').textContent);
+
+      /* --- 5. 和弦属性 --- */
+      var qBefore = st.voicings.length;
+      ok(clickChip('quality', 'm7'), '点击 m7 属性 chip');
+      ok($('chordName').textContent === 'F#m7', '♮3 级 + 小七 → ' + $('chordName').textContent);
+      ok(st.voicings.length !== qBefore, '换属性后指法数变化 ' + qBefore + ' → ' + st.voicings.length);
+      clickChip('quality', 'maj7');
+      ok($('chordName').textContent === 'F#maj7', '大七 → ' + $('chordName').textContent);
+
+      /* --- 6. 调内和弦快捷查询 --- */
+      clickChip('key', 0);
+      clickChip('quality', 'maj');
+      var dia = doc.querySelectorAll('[data-group="diatonic"]');
+      ok(dia.length === 7, '调内和弦 chip 数量 = ' + dia.length);
+      info('调内和弦：' + (function () {
+        var s = [];
+        for (var i = 0; i < dia.length; i++) s.push(dia[i].textContent);
+        return s.join(' | ');
+      })());
+      click(dia[4]);   /* V 级 */
+      ok($('chordName').textContent === 'G', '点调内 V 级 → ' + $('chordName').textContent);
+      ok($('chordRoman').textContent.indexOf('V 级') === 0, '级数标注 ' + $('chordRoman').textContent);
+      /* 切七和弦再点 V */
+      click($('btnDiatonic7'));
+      var dia7 = doc.querySelectorAll('[data-group="diatonic"]');
+      info('调内七和弦：' + (function () {
+        var s = [];
+        for (var i = 0; i < dia7.length; i++) s.push(dia7[i].textContent);
+        return s.join(' | ');
+      })());
+      click(dia7[4]);
+      ok($('chordName').textContent === 'G7', '七和弦模式点 V 级 → ' + $('chordName').textContent);
+      click($('btnDiatonic7'));
+
+      /* --- 7. 点击卡片选中 + 指板跟随 --- */
+      clickChip('key', 0);
+      clickChip('degree', 1);
+      clickChip('quality', 'maj');
+      var cards = doc.querySelectorAll('.card');
+      var target = cards[Math.min(3, cards.length - 1)];
+      var targetIndex = target.getAttribute('data-index');
+      click(target);
+      ok(target.classList.contains('on'), '被点击的卡片高亮');
+      ok(Number(st.selected) === Number(targetIndex), '选中下标更新为 ' + st.selected);
+      var tabAfter = $('neckInfo').textContent;
+      ok(tabAfter.length > 0, '指板信息更新：' + $('voicingLabel').textContent + ' / ' + tabAfter);
+
+      /* --- 8. 上一个 / 下一个指法 --- */
+      var before = st.selected;
+      click($('btnNext'));
+      ok(st.selected !== before, '“下一个”切换选中：' + before + ' → ' + st.selected);
+      click($('btnPrev'));
+      ok(Number(st.selected) === Number(before), '“上一个”切回：' + st.selected);
+
+      /* --- 9. 设置项 --- */
+      var allCount = st.voicings.length;
+      clickChip('maxFret', 12);
+      ok(st.maxFret === 12, '最大品切到 12');
+      var over = 0;
+      for (var i = 0; i < st.voicings.length; i++) {
+        for (var s = 0; s < 6; s++) if (st.voicings[i].frets[s] > 12) over++;
+      }
+      ok(over === 0, '12 品限制下无越界指法（' + st.voicings.length + ' 个，原 ' + allCount + ' 个）');
+      clickChip('maxFret', 24);
+
+      var n1 = st.voicings.length;
+      clickChip('minSounding', 6);
+      ok(st.voicings.length < n1 && st.voicings.length > 0, '最少发声 6 弦 → ' + st.voicings.length + ' 个指法');
+      clickChip('minSounding', 4);
+
+      clickChip('span', 3);
+      var spanOk = true;
+      for (i = 0; i < st.voicings.length; i++) if (st.voicings[i].spanUsed > 3) spanOk = false;
+      ok(spanOk, '跨度 3 限制生效（' + st.voicings.length + ' 个指法）');
+      clickChip('span', 4);
+
+      clickChip('compact', 'true');
+      var rendered = 0, groups = doc.querySelectorAll('.pos-group').length;
+      rendered = doc.querySelectorAll('.card').length;
+      ok(doc.querySelectorAll('.card').length <= groups, '精简模式：' + groups + ' 组 / ' + rendered + ' 张卡片');
+      clickChip('compact', 'false');
+
+      clickChip('labelMode', 'note');
+      var noteTexts = doc.querySelectorAll('.card .cb-dot-text');
+      ok(noteTexts.length > 0, '音名标注模式生效（首个标注 ' + (noteTexts[0] ? noteTexts[0].textContent : '-') + '）');
+      clickChip('labelMode', 'finger');
+
+      clickChip('range', '0-4');
+      var posHeads = doc.querySelectorAll('.pos-head strong');
+      var allLow = true;
+      for (i = 0; i < posHeads.length; i++) {
+        var m = posHeads[i].textContent.match(/第 (\d+) 把位/);
+        if (m && Number(m[1]) > 4) allLow = false;
+      }
+      ok(allLow && posHeads.length > 0, '品域过滤 0-4 生效：' + posHeads.length + ' 组');
+      var rg = doc.querySelector('[data-group="range"][data-value="0-4"]');
+      ok(rg && rg.classList.contains('on'), '品域筛选 chip 高亮跟随（0-4 品）');
+      clickChip('range', 'all');
+      ok(doc.querySelector('[data-group="range"][data-value="all"]').classList.contains('on'), '切回“全部”后高亮跟随');
+
+      /* --- 10. 开关 --- */
+      var bassOff = st.voicings.length;
+      var chk = $('chkBassRoot');
+      chk.checked = false;
+      var ev = doc.createEvent('HTMLEvents'); ev.initEvent('change', true, false); chk.dispatchEvent(ev);
+      ok(st.voicings.length > bassOff, '关闭“低音为根音” → ' + bassOff + ' 增至 ' + st.voicings.length);
+      chk.checked = true; chk.dispatchEvent(ev);
+      var allTones = $('chkAllTones');
+      allTones.checked = true;
+      allTones.dispatchEvent(ev);
+      ok(doc.querySelectorAll('#neckBox .nk-faint').length > 10, '显示全部和弦音：' + doc.querySelectorAll('#neckBox .nk-faint').length + ' 个淡色点');
+      allTones.checked = false; allTones.dispatchEvent(ev);
+
+      /* --- 11. 升降号拼写切换 --- */
+      clickChip('key', 6);   /* F# / Gb */
+      var name1 = $('chordName').textContent;
+      click($('btnSpell'));
+      var name2 = $('chordName').textContent;
+      ok(name1 !== name2, '升降号切换：' + name1 + ' → ' + name2);
+
+      /* --- 12. 空状态提示 --- */
+      clickChip('key', 0); clickChip('degree', 1); clickChip('quality', 'maj');
+      clickChip('maxFret', 12);
+      clickChip('minSounding', 6);
+      clickChip('span', 3);
+      clickChip('range', '17-24');
+      ok(doc.querySelector('.empty') !== null, '无结果时显示空状态提示');
+      clickChip('range', 'all'); clickChip('maxFret', 24); clickChip('minSounding', 4); clickChip('span', 4);
+      ok(doc.querySelector('.empty') === null, '恢复条件后空状态消失');
+
+      /* --- 13. 各属性的渲染冒烟测试 --- */
+      var smoke = [];
+      var qualities = win.Chord.QUALITY_LIST;
+      for (i = 0; i < qualities.length; i++) {
+        clickChip('quality', qualities[i].id);
+        var n = doc.querySelectorAll('.card').length;
+        var svgOk = !!doc.querySelector('.card svg');
+        if (!svgOk && st.voicings.length > 0) smoke.push(qualities[i].id + ':无SVG');
+        if (st.voicings.length === 0) smoke.push(qualities[i].id + ':无指法');
+      }
+      ok(smoke.length === 0, '全部 ' + qualities.length + ' 种属性能正常渲染（' + (smoke.length ? smoke.join(',') : '正常') + '）');
+
+      /* --- 14. 布局体检：不能有横向溢出，控件不能被挤出屏幕 --- */
+      clickChip('key', 0); clickChip('degree', 1); clickChip('quality', 'maj');
+      closeSheetIfOpen();
+      var vw = win.innerWidth;
+      info('视口 ' + vw + 'x' + win.innerHeight);
+      ok(doc.documentElement.scrollWidth <= vw + 1,
+         '页面无横向溢出（scrollWidth=' + doc.documentElement.scrollWidth + '）');
+
+      var toolbar = doc.querySelector('.neck-toolbar');
+      info('工具条宽度 ' + Math.round(toolbar.getBoundingClientRect().width));
+      var btns = ['btnSettings', 'btnPrev', 'btnNext', 'btnPlay'];
+      var overflowBtn = [];
+      for (i = 0; i < btns.length; i++) {
+        var r = $(btns[i]).getBoundingClientRect();
+        if (r.right > vw + 0.5 || r.left < -0.5 || r.width < 20) {
+          overflowBtn.push(btns[i] + '(left=' + Math.round(r.left) + ',right=' + Math.round(r.right) + ')');
+        }
+      }
+      ok(overflowBtn.length === 0, '工具条按钮都在屏幕内（' + (overflowBtn.length ? overflowBtn.join(',') : '正常') + '）');
+      var tr = $('neckInfo').getBoundingClientRect();
+      ok(tr.right <= vw + 0.5 && tr.width > 60, '指板信息行宽度正常（' + Math.round(tr.width) + 'px）');
+      ok($('neckInfo').scrollHeight <= 30, '指板信息行只有一行（高 ' + $('neckInfo').scrollHeight + 'px）');
+      ok(doc.querySelector('.neck-toolbar').scrollWidth <= toolbar.getBoundingClientRect().width + 1,
+         '工具条内部没有溢出（scrollWidth=' + doc.querySelector('.neck-toolbar').scrollWidth + '）');
+
+      var rh = doc.querySelector('.results-head');
+      ok(rh.scrollWidth <= rh.getBoundingClientRect().width + 1,
+         '“全部指法”计数行未溢出（' + rh.scrollWidth + ' / ' + Math.round(rh.getBoundingClientRect().width) + '）');
+
+      /* 横向滚动容器应该只出现在指板与卡片行 */
+      var overflowers = [];
+      var all = doc.querySelectorAll('*');
+      for (i = 0; i < all.length; i++) {
+        var el = all[i];
+        if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
+          var cls = el.className || el.tagName;
+          /* 故意的横向滚动容器与“省略号截断”不算溢出 */
+          var intentional = String(cls).indexOf('neck-scroll') >= 0 ||
+                            String(cls).indexOf('cards') >= 0 ||
+                            String(cls).indexOf('chip-row') >= 0 ||
+                            String(cls).indexOf('sheet-body') >= 0;
+          if (!intentional) {
+            var cs = win.getComputedStyle(el);
+            if (cs.textOverflow === 'ellipsis') intentional = true;
+          }
+          if (!intentional) {
+            overflowers.push(el.tagName + '.' + String(cls) + ':' + el.scrollWidth + '>' + el.clientWidth);
+          }
+        }
+      }
+      ok(overflowers.length === 0, '无意外横向溢出元素（' + (overflowers.length ? overflowers.slice(0, 5).join(' | ') : '正常') + '）');
+
+      /* --- 15. 条件抽屉布局 --- */
+      win.scrollTo(0, 0);
+      click($('btnSettings'));
+      ok($('sheet').classList.contains('open'), '点 ⚙ 后抽屉打开');
+      var sh = $('sheet');
+      var sheetH = sh.offsetHeight;
+      var sheetTop = win.innerHeight - sheetH;   /* 过渡动画不影响 offsetHeight，按最终位置算 */
+      info('抽屉最终高度 ' + sheetH + 'px，顶部 y=' + sheetTop + '（视口 ' + vw + 'x' + win.innerHeight + '）');
+      ok(sheetH <= win.innerHeight * 0.59, '抽屉不超过 58vh（' + sheetH + 'px）');
+      var neckRect = doc.querySelector('.neck-section').getBoundingClientRect();
+      info('指板区域 y ' + Math.round(neckRect.top) + ' ~ ' + Math.round(neckRect.bottom));
+      /* 常规手机（高 >= 660）要求整块指板都露在抽屉上方；
+         极矮屏（如 320x568）允许压住最后一根弦，但至少露出工具条 + 4 根弦 */
+      var tight = win.innerHeight < 660;
+      var need = tight ? (44 + 4 * 24) : 0;
+      ok(neckRect.bottom <= sheetTop + 1 || (tight && sheetTop - neckRect.top >= need),
+         '抽屉打开时指板可见（指板底 ' + Math.round(neckRect.bottom) + '，抽屉顶 ' + sheetTop +
+         '，' + (tight ? '矮屏至少需露出 ' + need + 'px' : '需完整露出') + '）');
+      ok(neckRect.top >= -1, '抽屉打开时指板未被顶出屏幕（top=' + Math.round(neckRect.top) + '）');
+      ok(sh.scrollWidth <= sh.offsetWidth + 1, '抽屉内部无横向溢出');
+      ok(doc.querySelector('.sheet-body').scrollHeight > 0, '抽屉内容可滚动（内容高 ' + doc.querySelector('.sheet-body').scrollHeight + '）');
+      click($('sheetDone'));
+      ok(!$('sheet').classList.contains('open'), '点“完成”后抽屉关闭');
+
+      /* --- 16. 试听按钮的健壮性（无声环境也不能抛错） --- */
+      var audioErr = null;
+      try {
+        ok(win.Audio_.supported(), '浏览器/WebView 支持 WebAudio');
+        click($('btnPlay'));
+        /* 连点多次（模拟用户狂点）不应报错 */
+        click($('btnPlay')); click($('btnPlay'));
+      } catch (e) {
+        audioErr = e.message;
+      }
+      ok(audioErr === null, '试听按钮不抛异常（' + (audioErr || '正常') + '）');
+      /* 试听后界面仍可正常操作 */
+      click($('btnNext'));
+      ok(doc.querySelector('#neckInfo').textContent.length > 0, '试听后仍能切换指法并刷新信息行');
+    } catch (e) {
+      fails++;
+      lines.push('EXCEPTION: ' + e.message + '\n' + (e.stack || ''));
+    }
+
+    lines.push('');
+    lines.push(fails === 0 ? 'UI_TESTS_PASSED' : ('UI_TESTS_FAILED: ' + fails));
+    document.getElementById('out').textContent = lines.join('\n');
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# 构建产物与本地工具链，不入库
+.toolchain/
+.gradle/
+build/
+app/build/
+local.properties
+captures/
+.idea/
+*.iml
+.DS_Store
+*.apk

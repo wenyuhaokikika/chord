@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>和弦引擎自检</title></head>
+<body>
+<pre id="out">running...</pre>
+<script src="../app/src/main/assets/www/js/music.js"></script>
+<script src="../app/src/main/assets/www/js/chord.js"></script>
+<script src="../app/src/main/assets/www/js/render.js"></script>
+<script>
+(function () {
+  var M = window.Music, C = window.Chord, R = window.Render;
+  var lines = [];
+  var fails = 0;
+
+  function ok(cond, msg) {
+    lines.push((cond ? 'PASS  ' : 'FAIL  ') + msg);
+    if (!cond) fails++;
+  }
+  function info(msg) { lines.push('      ' + msg); }
+
+  /* ---------- 1. 乐理工具 ---------- */
+  ok(M.degreeToPc(0, 'major', 5, 0) === 7, 'C 大调 5 级 = G(7)');
+  ok(M.degreeToPc(0, 'major', 7, 0) === 11, 'C 大调 7 级 = B(11)');
+  ok(M.degreeToPc(0, 'major', 4, 1) === 6, 'C 大调 #4 级 = F#(6)');
+  ok(M.degreeToPc(9, 'minor', 3, 0) === 0, 'A 自然小调 3 级 = C(0)');
+  ok(M.degreeToPc(0, 'major', 2, -1) === 1, 'C 大调 b2 级 = Db(1)');
+  ok(M.romanNumeral(1, 0, 'maj') === 'I', '罗马数字 I');
+  ok(M.romanNumeral(2, 0, 'min') === 'ii', '罗马数字 ii');
+  ok(M.romanNumeral(7, 0, 'dim') === 'vii\u00b0', '罗马数字 vii°');
+  ok(M.romanNumeral(3, -1, 'maj') === '\u266dIII', '罗马数字 ♭III');
+  ok(M.romanNumeral(5, 0, 'maj', '7') === 'V7', '罗马数字 V7（属七）');
+  ok(M.romanNumeral(1, 0, 'maj', 'maj7') === 'Imaj7', '罗马数字 Imaj7（大七）');
+  ok(M.romanNumeral(2, 0, 'min', '7') === 'ii7', '罗马数字 ii7（小七）');
+  ok(M.seventhFigure('m7b5') === '7' && M.romanNumeral(7, 0, 'halfdim', M.seventhFigure('m7b5')) === 'vii\u00f87', '半减七标记 viiø7');
+
+  /* 调内和弦性质 */
+  var seen = [];
+  for (var d = 1; d <= 7; d++) seen.push(M.scaleChordQuality(0, 'major', d, false).qualityId);
+  ok(seen.join(',') === 'maj,min,min,maj,maj,min,dim', 'C 大调三和弦：' + seen.join(','));
+  var seen7 = [];
+  for (d = 1; d <= 7; d++) seen7.push(M.scaleChordQuality(0, 'major', d, true).qualityId);
+  ok(seen7.join(',') === 'maj7,m7,m7,maj7,7,m7,m7b5', 'C 大调七和弦：' + seen7.join(','));
+  var seenMin = [];
+  for (d = 1; d <= 7; d++) seenMin.push(M.scaleChordQuality(9, 'minor', d, false).triad);
+  ok(seenMin.join(',') === 'min,dim,maj,min,min,maj,maj', 'A 自然小调三和弦：' + seenMin.join(','));
+  var seenHar = [];
+  for (d = 1; d <= 7; d++) seenHar.push(M.scaleChordQuality(9, 'harmonic', d, true).qualityId);
+  ok(seenHar[4] === '7', 'A 和声小调 5 级 = 属七（' + seenHar.join(',') + '）');
+
+  /* ---------- 2. 指法搜索：C 大三和弦 ---------- */
+  var t0 = +new Date();
+  var c = C.searchVoicings(0, C.qualityById('maj'), { maxFret: 24, span: 4, minSounding: 4, bassIsRoot: true });
+  var t1 = +new Date();
+  info('C 大三和弦：找到 ' + c.length + ' 个指法，耗时 ' + (t1 - t0) + ' ms');
+
+  function has(list, frets) {
+    var key = frets.join(',');
+    for (var i = 0; i < list.length; i++) if (list[i].frets.join(',') === key) return true;
+    return false;
+  }
+  ok(has(c, [-1, 3, 2, 0, 1, 0]), '包含开放把位 C（x32010）');
+  ok(!has(c, [0, 3, 2, 0, 1, 0]), '低音为根音时排除 C/E 转位（032010）');
+  ok(has(C.searchVoicings(0, C.qualityById('maj'), { maxFret: 24, span: 4, minSounding: 4, bassIsRoot: false }), [0, 3, 2, 0, 1, 0]), '关闭低音限制后能找到 032010');
+  ok(has(c, [-1, 3, 5, 5, 5, 3]), '包含 A 型大横按 C（x35553）');
+  ok(has(c, [8, 10, 10, 9, 8, 8]), '包含 E 型大横按 C（8 10 10 9 8 8）');
+
+  /* 全部指法的合法性检查 */
+  var allowedPcs = [0, 4, 7];
+  var bad = [];
+  for (var i = 0; i < c.length; i++) {
+    var v = c[i];
+    var pcs = {};
+    var sounding = 0, bass = -1, minF = 0, maxF = 0;
+    var firstSounding = -1, lastSounding = -1;
+    for (var s = 0; s < 6; s++) {
+      if (v.frets[s] < 0) continue;
+      if (firstSounding < 0) firstSounding = s;
+      lastSounding = s;
+    }
+    for (s = firstSounding; s <= lastSounding; s++) {
+      if (v.frets[s] < 0) bad.push('首尾之间存在闷弦：' + v.frets.join(' '));
+    }
+    for (s = 0; s < 6; s++) {
+      var f = v.frets[s];
+      if (f < 0) continue;
+      sounding++;
+      var pc = C.pcAt(s, f);
+      pcs[pc] = 1;
+      if (bass < 0) bass = pc;
+      if (f > 0) { if (minF === 0 || f < minF) minF = f; if (f > maxF) maxF = f; }
+      if (pc !== 0 && pc !== 4 && pc !== 7) bad.push('非和弦音 ' + v.frets.join(' ') + ' 弦' + s + '品' + f);
+    }
+    if (!pcs[0] || !pcs[4]) bad.push('缺少根音或三音：' + v.frets.join(' '));
+    if (sounding < 4) bad.push('发声弦不足：' + v.frets.join(' '));
+    if (bass !== 0) bad.push('低音不是根音：' + v.frets.join(' '));
+    if (maxF - minF > 4) bad.push('跨度过大：' + v.frets.join(' '));
+    if (v.position !== minF) bad.push('把位计算错误：' + v.frets.join(' '));
+  }
+  ok(bad.length === 0, '所有指法均合法（' + bad.length + ' 个问题）');
+  if (bad.length) info(bad.slice(0, 8).join(' | '));
+
+  /* 把位分组覆盖 */
+  var groups = C.groupByPosition(c);
+  var posList = [];
+  for (i = 0; i < groups.length; i++) posList.push(groups[i].position);
+  info('覆盖把位：' + posList.join(', '));
+
+  /* ---------- 3. 其它属性 ---------- */
+  function count(id, rootPc) {
+    var res = C.searchVoicings(rootPc === undefined ? 0 : rootPc, C.qualityById(id), { maxFret: 24, span: 4, minSounding: 4, bassIsRoot: true });
+    return res;
+  }
+  var q7 = count('7');
+  ok(q7.length > 0 && has(q7, [-1, 3, 2, 3, 1, 0]), 'C7 找到 ' + q7.length + ' 个指法，含开放把位 x32310');
+  var qm7 = count('m7');
+  info('Cm7 找到 ' + qm7.length + ' 个指法');
+  var qmaj7 = count('maj7');
+  info('Cmaj7 找到 ' + qmaj7.length + ' 个指法');
+  /* Cmaj7 开放把位 x32000 */
+  ok(has(qmaj7, [-1, 3, 2, 0, 0, 0]), '包含 Cmaj7 开放把位（x32000）');
+  var qdim7 = count('dim7');
+  info('Cdim7 找到 ' + qdim7.length + ' 个指法');
+  var q5 = count('5');
+  info('C5 找到 ' + q5.length + ' 个指法');
+  ok(q5.length > 0 && q5[0].sounding >= 3, '强力和弦至少 3 弦：' + C.tabString(q5[0]));
+  var q13 = count('13');
+  info('C13 找到 ' + q13.length + ' 个指法；示例 ' + (q13[0] ? C.tabString(q13[0]) : '-'));
+  var q9 = count('9');
+  info('C9 找到 ' + q9.length + ' 个指法；示例 ' + (q9[0] ? C.tabString(q9[0]) : '-'));
+
+  /* 转位（低音不限）应当更多 */
+  var inv = C.searchVoicings(0, C.qualityById('maj'), { maxFret: 24, span: 4, minSounding: 4, bassIsRoot: false });
+  ok(inv.length >= c.length, '关闭“低音为根音”后指法数 ' + inv.length + ' >= ' + c.length);
+
+  /* 最大品限制生效 */
+  var c5 = C.searchVoicings(0, C.qualityById('maj'), { maxFret: 5, span: 4, minSounding: 4, bassIsRoot: true });
+  var over = 0;
+  for (i = 0; i < c5.length; i++) for (var s2 = 0; s2 < 6; s2++) if (c5[i].frets[s2] > 5) over++;
+  ok(over === 0 && c5.length > 0, '最大品 5 时 ' + c5.length + ' 个指法，无越界');
+
+  /* 性能：全部属性 × 12 个根音 */
+  var t2 = +new Date();
+  var totalVoicings = 0, worst = 0, worstName = '';
+  for (var r = 0; r < 12; r++) {
+    for (var qi = 0; qi < C.QUALITY_LIST.length; qi++) {
+      var st = +new Date();
+      var res = C.searchVoicings(r, C.QUALITY_LIST[qi], { maxFret: 24, span: 4, minSounding: 4, bassIsRoot: true });
+      var el = +new Date() - st;
+      if (el > worst) { worst = el; worstName = M.noteName(r, false) + C.QUALITY_LIST[qi].symbol; }
+      totalVoicings += res.length;
+    }
+  }
+  var t3 = +new Date();
+  info('穷举 12 根音 × ' + C.QUALITY_LIST.length + ' 属性：' + totalVoicings + ' 个指法，总耗时 ' + (t3 - t2) + ' ms，最慢 ' + worst + ' ms（' + worstName + '）');
+  ok((t3 - t2) < 8000, '性能可接受（总耗时 ' + (t3 - t2) + ' ms）');
+
+  /* ---------- 4. 渲染 ---------- */
+  var svg1 = R.chordBox(c[0], { labelMode: 'finger', preferFlat: false, rootPc: 0 });
+  ok(svg1.indexOf('<svg') === 0 && svg1.indexOf('</svg>') > 0, '和弦图 SVG 生成成功（' + svg1.length + ' 字节）');
+  ok(svg1.indexOf('cb-dot') > 0, '和弦图包含按弦点');
+  var big = C.searchVoicings(0, C.qualityById('maj7'), { maxFret: 24, span: 4, minSounding: 5, bassIsRoot: true })[0];
+  var svg2 = R.neck({ maxFret: 24, rootPc: 0, quality: C.qualityById('maj7'), frets: big.frets, barre: big.barre, preferFlat: false, showAllTones: true, rowH: 30 });
+  ok(svg2.indexOf('<svg') === 0 && svg2.indexOf('nk-dot') > 0, '全指板 SVG 生成成功（' + svg2.length + ' 字节）');
+  ok(svg2.indexOf('width="1087.1"') > 0, '指板宽度按最大品 24 计算（1087.1px）');
+
+  /* 指板上每个音的位置必须落在正确的弦/品上：以 x32010 为例 */
+  var open = null;
+  for (i = 0; i < c.length; i++) if (c[i].frets.join(',') === '-1,3,2,0,1,0') open = c[i];
+  ok(open !== null, '取到 x32010 指法用于指板校验');
+  var neckSvg = R.neck({ maxFret: 24, rootPc: 0, quality: C.qualityById('maj'), frets: open.frets, barre: open.barre, preferFlat: false, rowH: 30 });
+  function countOf(svg, cls) {
+    var re = new RegExp('class="' + cls + '"', 'g'), n = 0;
+    while (re.exec(svg)) n++;
+    return n;
+  }
+  ok(countOf(neckSvg, 'nk-dot') === 3, 'x32010 指板上有 3 个按弦点（实际 ' + countOf(neckSvg, 'nk-dot') + '）');
+  ok(countOf(neckSvg, 'nk-open') === 2, 'x32010 指板上有 2 个空弦圈（G、e）实际 ' + countOf(neckSvg, 'nk-open'));
+  ok(countOf(neckSvg, 'nk-mute') === 1, 'x32010 指板上有 1 个闷弦 ×（低音 E）');
+  /* 6 弦闷弦：y = topPad + (5-0)*rowH = 26 + 150 = 176 */
+  ok(neckSvg.indexOf('<text class="nk-mute" x="29" y="180.5"') > 0, '闷弦 × 画在第 6 弦位置');
+  /* B 弦(索引4) 1 品 = C：x = 46 + 0.5*42 = 67, y = 26 + (5-4)*30 = 56 */
+  ok(neckSvg.indexOf('cx="67" cy="56" r="10"') > 0, 'B 弦 1 品按弦点坐标正确（67, 56）');
+  ok(neckSvg.indexOf('x="67" y="59.6" text-anchor="middle" font-size="10">C<') > 0, 'B 弦 1 品标注音名 C');
+  /* G 弦(索引3) 空弦 = G：x = 29, y = 26 + 2*30 = 86 */
+  ok(neckSvg.indexOf('<circle class="nk-open" cx="29" cy="86" r="7.5"/>') > 0, 'G 弦空弦圈坐标正确（29, 86）');
+  /* A 弦(索引1) 3 品 = C：x = 46 + 2.5*42 = 151, y = 26 + 4*30 = 146 */
+  ok(neckSvg.indexOf('cx="151" cy="146" r="10"') > 0, 'A 弦 3 品按弦点坐标正确（151, 146）');
+  /* 位置窗口应框住 0..3 品：x = 46, 宽 3*42 = 126 */
+  ok(neckSvg.indexOf('<rect class="nk-window" x="46" y="18" width="126"') > 0, '把位窗口覆盖 0-3 品（x=46 宽=126）');
+  ok(neckSvg.indexOf('nk-faint') < 0, '未开启“全部和弦音”时没有淡色点');
+  /* 品记必须画在琴颈正中（G 弦与 D 弦之间）：y = 26 + 2.5*30 = 101 */
+  ok(neckSvg.indexOf('class="nk-marker" cx="151" cy="101"') > 0, '3 品品记在琴颈正中（y=101，G/D 弦之间）');
+  ok(neckSvg.indexOf('class="nk-marker" cx="529" cy="91"') > 0 && neckSvg.indexOf('class="nk-marker" cx="529" cy="111"') > 0,
+     '12 品双品记上下成对（y=91/111）');
+  ok(countOf(neckSvg, 'nk-marker') === 12, '24 品指板共 12 个品记点（8 个单点 + 12/24 两处双点），实际 ' + countOf(neckSvg, 'nk-marker'));
+
+  /* 横按判定：正反用例 */
+  function findVoicing(rootPc, qualId, tab, opts) {
+    var list = C.searchVoicings(rootPc, C.qualityById(qualId), opts);
+    for (var i = 0; i < list.length; i++) if (list[i].frets.join(',') === tab) return list[i];
+    return null;
+  }
+  var wide = { maxFret: 24, span: 4, minSounding: 5, bassIsRoot: true };
+  /* F 大三和弦 133211 = 1 品全横按 */
+  var fullBarre = findVoicing(5, 'maj', '1,3,3,2,1,1', wide);
+  ok(fullBarre && fullBarre.barre && fullBarre.barre.fret === 1 &&
+     fullBarre.barre.from === 0 && fullBarre.barre.to === 5,
+     'F 大横按 133211 识别为 1 品全横按（6 弦到 1 弦）');
+  /* Bbmaj7 = x10231（B♭ D F A）：最低按弦品 1 上有 5 弦和 1 弦，
+     但中间的 D 弦是空弦，手指横按过去就无法让它响 —— 不能算横按 */
+  var noBarre = findVoicing(10, 'maj7', '-1,1,0,2,3,1', wide);
+  ok(noBarre !== null, '找到 Bbmaj7 的 x10231 指法');
+  ok(noBarre && noBarre.barre === null, 'x10231 中间夹空弦，不识别为横按');
+  ok(noBarre && noBarre.fingers.join(',') === '-1,1,-1,2,3,1',
+     'x10231 指法数字 ' + (noBarre ? noBarre.fingers.join(',') : '-') + '（-1=空弦/闷弦无需手指，1 品=食指）');
+
+  /* 横按指法的音名标注：Dmaj9 = x 5 2 2 2 2（D E A C# F#），逐弦核对音名 */
+  var dmaj9 = { frets: [-1, 5, 2, 2, 2, 2], barre: { fret: 2, from: 2, to: 5 } };
+  var barreSvg = R.neck({ maxFret: 24, rootPc: 2, quality: C.qualityById('maj9'),
+                          frets: dmaj9.frets, barre: dmaj9.barre, preferFlat: false, rowH: 30 });
+  /* 小屏（矮屏）时弦距收紧到 24，几何按同一套公式缩放：D 弦(索引2) 2 品 y = 26 + 3*24 = 98 */
+  var tightSvg = R.neck({ maxFret: 24, rootPc: 2, quality: C.qualityById('maj9'),
+                          frets: dmaj9.frets, barre: dmaj9.barre, preferFlat: false, rowH: 24 });
+  /* 横按胶囊高度 = (弦2 y - 弦5 y) + 20 = (26+3*24 - 26) + 20 = 92 */
+  ok(tightSvg.indexOf('x="109" y="101.6"') > 0 && tightSvg.indexOf('width="20" height="92"') > 0,
+     '小屏弦距 24 时指板几何同步收缩');
+  /* 第 5 弦(高音 e) 2 品 = F#：x = 46 + 1.5*42 = 109, y = 26 + 0*30 = 26 */
+  ok(barreSvg.indexOf('x="109" y="29.6" text-anchor="middle" font-size="8.6">F#<') > 0, '高音 e 弦 2 品标注 F#');
+  /* 第 4 弦(B) 2 品 = C# */
+  ok(barreSvg.indexOf('x="109" y="59.6" text-anchor="middle" font-size="8.6">C#<') > 0, 'B 弦 2 品标注 C#');
+  /* 第 3 弦(G) 2 品 = A */
+  ok(barreSvg.indexOf('x="109" y="89.6" text-anchor="middle" font-size="10">A<') > 0, 'G 弦 2 品标注 A');
+  /* 第 2 弦(D) 2 品 = E */
+  ok(barreSvg.indexOf('x="109" y="119.6" text-anchor="middle" font-size="10">E<') > 0, 'D 弦 2 品标注 E');
+  /* 第 5 弦(A) 5 品 = D：x = 46 + 4.5*42 = 235, y = 26 + 4*30 = 146 */
+  ok(barreSvg.indexOf('x="235" y="149.6" text-anchor="middle" font-size="10">D<') > 0, 'A 弦 5 品标注 D');
+  /* 横按条：fret 2 上有 2..5 共 4 根弦，胶囊沿 x=109 从 e 弦(26) 跨到 D 弦(116) */
+  /* y = yy(b)-10 = 16，高 = yy(a)-yy(b)+20 = 110 */
+  ok(barreSvg.indexOf('<rect class="nk-barre" x="99" y="16" width="20" height="110" rx="10"/>') > 0, '横按条几何正确');
+  ok(countOf(barreSvg, 'nk-mute') === 1, '低音 E 弦是闷弦');
+  /* 每个按弦点的音名都必须和该弦该品的实际音高一致（全量自检） */
+  var labelsMismatch = [];
+  var reDot = /<text class="nk-dot-text" x="([\d.]+)" y="([\d.]+)"[^>]*>([^<]+)<\/text>/g, mm;
+  var checked = 0;
+  while ((mm = reDot.exec(barreSvg))) {
+    var x = Number(mm[1]);
+    var yDot = Number(mm[2]) - 3.6;                    /* 圆点中心 y */
+    var strIdx = 5 - Math.round((yDot - 26) / 30);      /* y = 26 + (5-s)*30 */
+    var fretIdx = Math.round((x - 46) / 42 + 0.5);      /* x = 46 + (f-0.5)*42 */
+    var expect = M.noteName(C.pcAt(strIdx, fretIdx), false);
+    if (expect !== mm[3]) labelsMismatch.push('弦' + strIdx + '品' + fretIdx + ' 显示' + mm[3] + ' 应为' + expect);
+    checked++;
+  }
+  ok(labelsMismatch.length === 0 && checked >= 9,
+     '横按指法全部 ' + checked + ' 个圆点音名正确（' + (labelsMismatch.length ? labelsMismatch.join(' | ') : '含横按重复标注') + '）');
+
+  /* ---------- 输出 ---------- */
+  lines.push('');
+  lines.push(fails === 0 ? 'ALL_TESTS_PASSED' : ('TESTS_FAILED: ' + fails));
+  document.getElementById('out').textContent = lines.join('\n');
+})();
+</script>
+</body>
+</html>

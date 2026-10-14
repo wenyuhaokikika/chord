@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 日间模式窗口底色，与网页浅色主题一致 -->
+    <color name="app_bg">#F4F5F8</color>
+    <color name="icon_background">#12151C</color>
+</resources>

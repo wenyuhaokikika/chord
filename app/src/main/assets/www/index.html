@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>和弦助手 · Chord Helper</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ================= 顶部信息 ================= -->
+<header class="app-header">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">&#127928;</div>
+    <div class="brand-text">
+      <h1>和弦助手</h1>
+      <p id="subTitle">C 大调 · I 级 · 大三和弦</p>
+    </div>
+    <button id="btnSpell" class="ghost-btn" type="button" title="切换升降号拼写">&#9839;</button>
+  </div>
+  <div class="chord-headline">
+    <div class="chord-name" id="chordName">C</div>
+    <div class="chord-meta">
+      <span class="roman" id="chordRoman">I</span>
+      <span class="notes" id="chordNotes">C · E · G</span>
+    </div>
+  </div>
+</header>
+
+<!-- ================= 指板视图（吸顶，首屏可见） ================= -->
+<section class="neck-section" id="neckSection">
+  <div class="neck-toolbar">
+    <button class="round-btn" id="btnSettings" type="button" title="查询条件">&#9881;</button>
+    <button class="round-btn" id="btnPrev" type="button" title="上一个指法">&#9664;</button>
+    <div class="neck-title">
+      <strong id="voicingLabel">开放把位</strong>
+    </div>
+    <button class="round-btn" id="btnNext" type="button" title="下一个指法">&#9654;</button>
+    <button class="round-btn" id="btnPlay" type="button" title="试听">&#9834;</button>
+  </div>
+  <div class="neck-scroll" id="neckScroll">
+    <div id="neckBox"></div>
+  </div>
+  <div class="neck-info" id="neckInfo"></div>
+</section>
+
+<!-- ================= 结果 ================= -->
+<main class="results">
+  <div class="results-head">
+    <strong>全部指法</strong>
+    <span id="resultCount">0 个</span>
+  </div>
+  <div class="chip-row small" id="rangeChips"></div>
+  <div id="results"></div>
+</main>
+
+<footer class="app-footer">
+  <p>和弦助手 · 本地离线运行，无需联网。标准调弦 EADGBE。</p>
+  <details class="advanced">
+    <summary>使用说明</summary>
+    <ol class="help">
+      <li>点顶部 <b>&#9881;</b> 打开查询条件：先选<b>主调</b>，再选<b>级数</b>（可加升降号），最后选<b>和弦属性</b>。</li>
+      <li>“调内和弦”一排是当前调的自然和弦，点一下直接查询。</li>
+      <li>指板默认 24 品，可在条件面板里调整；点任意指法卡片可以在指板上高亮该指法。</li>
+      <li><b>&#9664; / &#9654;</b> 在全部指法之间切换，<b>&#9834;</b> 试听当前指法（扫弦）。</li>
+      <li>谱记法：x = 闷弦，0 = 空弦，数字 = 品位；圆点里的数字是建议指法（1=食指 … 4=小指）。</li>
+    </ol>
+  </details>
+</footer>
+
+<!-- ================= 查询条件面板（底部抽屉） ================= -->
+<div class="backdrop" id="backdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-head">
+    <strong>查询条件</strong>
+    <button class="mini-toggle on" id="sheetDone" type="button">完成</button>
+  </div>
+  <div class="sheet-body">
+
+    <div class="field">
+      <label>主调（Key）</label>
+      <div class="chip-row" id="keyChips"></div>
+    </div>
+
+    <div class="field">
+      <label>音阶 / 级数（级数决定和弦根音）</label>
+      <div class="chip-row small" id="scaleChips"></div>
+      <div class="chip-row" id="degreeChips"></div>
+      <div class="seg" id="accChips">
+        <button type="button" data-acc="-1">&#9837; 降</button>
+        <button type="button" data-acc="0" class="on">&#9838; 本音</button>
+        <button type="button" data-acc="1">&#9839; 升</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="label-row">
+        <label>调内和弦（点一下直接查）</label>
+        <button class="mini-toggle" id="btnDiatonic7" type="button">七和弦</button>
+      </div>
+      <div class="chip-row wrap" id="diatonicRow"></div>
+    </div>
+
+    <div class="field">
+      <label>和弦属性</label>
+      <div id="qualityGroups"></div>
+    </div>
+
+    <details class="advanced" id="advanced">
+      <summary>高级设置</summary>
+      <div class="field">
+        <label>指板最大品（默认 24）</label>
+        <div class="chip-row small" id="maxFretChips"></div>
+      </div>
+      <div class="field">
+        <label>单个指法最大跨度（品）</label>
+        <div class="chip-row small" id="spanChips"></div>
+      </div>
+      <div class="field">
+        <label>最少发声弦数</label>
+        <div class="chip-row small" id="minSoundChips"></div>
+      </div>
+      <div class="field">
+        <label>展示方式</label>
+        <div class="chip-row small" id="modeChips"></div>
+      </div>
+      <div class="field">
+        <label>和弦图标注</label>
+        <div class="chip-row small" id="labelChips"></div>
+      </div>
+      <div class="switch-list">
+        <label class="switch"><input type="checkbox" id="chkBassRoot" checked><span>低音必须是根音（关闭可看转位）</span></label>
+        <label class="switch"><input type="checkbox" id="chkInnerMute"><span>允许发声弦中间有闷弦</span></label>
+        <label class="switch"><input type="checkbox" id="chkAllTones"><span>指板上显示全部和弦音</span></label>
+      </div>
+    </details>
+
+  </div>
+</div>
+
+<script src="js/music.js"></script>
+<script src="js/chord.js"></script>
+<script src="js/render.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

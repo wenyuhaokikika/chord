@@ -1,0 +1,19 @@
+pluginManagement {
+    repositories {
+        /* AGP 只发布在 Google Maven；国内网络可把下面两个换成镜像 */
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "ChordHelper"
+include ':app'

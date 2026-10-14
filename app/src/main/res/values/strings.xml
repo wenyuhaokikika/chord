@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">和弦助手</string>
+    <string name="webview_missing">当前系统缺少可用的 WebView 组件，无法显示界面。</string>
+</resources>

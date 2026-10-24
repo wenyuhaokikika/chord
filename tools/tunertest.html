@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>调音端到端测试</title>
+<style>body{font:13px monospace;margin:0;padding:8px}iframe{width:390px;height:844px;border:0;position:absolute;left:-9999px}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+<pre id="out">running...</pre>
+<iframe id="f" src="../app/src/main/assets/www/index.html#tab=tuner"></iframe>
+<script>
+/*
+ * 调音链路端到端测试（步骤驱动，每步独立 try/catch，方便定位卡在哪一步）。
+ *
+ * 默认模式不依赖真实麦克风：往页面里注入一个已知频率的振荡器（window.__TUNER_TEST_SOURCE），
+ * 让「音频节点 -> AnalyserNode -> 自相关测频 -> 中位数平滑 -> 音名/级数/弦识别 -> 指板高亮」
+ * 整条链路真跑一遍，再断言界面读数。
+ * 带 ?mic=1 时改为走真实 getUserMedia（配合 Chrome 的假麦克风 + test-tone.wav）。
+ *
+ * 结果通过 sendBeacon 回传给 tools/run_tuner_test.py：无头浏览器没法把控制台结果带出来，
+ * 而 --dump-dom 会在测试跑完之前就 dump。
+ */
+(function () {
+  var lines = [], fails = 0;
+  var SEP = '  |  ';
+  function ok(cond, msg) { lines.push((cond ? 'PASS  ' : 'FAIL  ') + msg); if (!cond) fails++; }
+  function info(msg) { lines.push('      ' + msg); }
+
+  var qs = (location.search || '').replace(/^\?/, '').split('&');
+  var REPORT_PORT = 0, USE_MIC = false;
+  for (var qi = 0; qi < qs.length; qi++) {
+    var kv = qs[qi].split('=');
+    if (kv[0] === 'port') REPORT_PORT = Number(kv[1]);
+    if (kv[0] === 'mic') USE_MIC = (kv[1] === '1');
+  }
+  function report(text) {
+    document.getElementById('out').textContent = text;
+    if (REPORT_PORT && navigator.sendBeacon) {
+      try { navigator.sendBeacon('http://127.0.0.1:' + REPORT_PORT + '/result', text); } catch (e) {}
+    }
+  }
+  /* 主脚本若因语法错误没执行，这里会显式报出来（否则只会看到 running...） */
+  window.setTimeout(function () {
+    var p = document.getElementById('out');
+    if (p && p.textContent === 'running...') {
+      p.textContent = 'SCRIPT_DID_NOT_START (主脚本未执行，可能是语法错误)';
+    }
+  }, 2000);
+
+  var frame = document.getElementById('f');
+  var doc = null, win = null, osc = null;
+
+  function $(id) { return doc.getElementById(id); }
+  function click(el) {
+    var ev = doc.createEvent('MouseEvents');
+    ev.initMouseEvent('click', true, true, win, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+    el.dispatchEvent(ev);
+  }
+  function flat(s) { return String(s).replace(/\s+/g, ''); }
+  function readout() {
+    return {
+      note: flat($('tuneNote').textContent),
+      cls: $('tuneNote').className,
+      freq: String($('tuneFreq').textContent).replace(/\s+/g, ' ').trim(),
+      degree: flat($('tuneDegree').textContent),
+      string: flat($('tuneString').textContent),
+      cents: flat($('tuneCents').textContent),
+      needle: $('centsNeedle').style.left,
+      micBtn: flat($('btnMic').textContent)
+    };
+  }
+  function hz() {
+    var m = /^([\d.]+)/.exec($('tuneFreq').textContent);
+    return m ? Number(m[1]) : NaN;
+  }
+  function scans() { return doc.querySelectorAll('#scaleBox .nk-scan').length; }
+  function names() { return doc.querySelectorAll('#scaleBox .nk-scale-name').length; }
+  function chip(group, value) {
+    var list = doc.querySelectorAll('[data-group="' + group + '"]');
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].getAttribute('data-value') === String(value)) { click(list[i]); return list[i]; }
+    }
+    return null;
+  }
+
+  /* 注入一个已知频率的振荡器，接到页面的测试插口上 */
+  function setTone(freq, amp, detuneCents) {
+    if (!osc) {
+      var ctx = win.Tuner.audioContext();
+      osc = ctx.createOscillator();
+      osc.type = 'sawtooth';                 /* 泛音丰富、更接近拨弦，顺便考验倍频陷阱 */
+      var g = ctx.createGain();
+      g.gain.value = (amp === undefined) ? 0.25 : amp;
+      osc.connect(g);
+      osc.start();
+      win.__TUNER_TEST_SOURCE = g;
+      osc.__out = g;
+    }
+    osc.frequency.value = freq;
+    osc.detune.value = detuneCents || 0;
+  }
+
+  /* ---------------- 测试步骤 ---------------- */
+  var steps = [
+    { name: '检查调音板块',
+      run: function () {
+        ok(win.CHORD_STATE.tab === 'tuner', '#tab=tuner 直达调音页签');
+        ok(doc.getElementById('viewTuner').hidden === false && doc.getElementById('viewChord').hidden === true,
+           '只显示调音板块');
+        ok($('scaleTitle').textContent.indexOf('C 大调') === 0, '标题：' + $('scaleTitle').textContent);
+        ok(doc.querySelectorAll('.tone-chip').length === 7, '七个音 chip 齐全');
+        ok(doc.querySelectorAll('.mode-row').length === 6, '调式表分页显示（每页 6 条，共 10 个调式）');
+        ok($('modeTable').querySelector('.pager-info').textContent.indexOf('共 10 条') > 0,
+           '调式总数：' + $('modeTable').querySelector('.pager-info').textContent);
+        ok(names() > 50, '音阶指板音位都带音名（' + names() + ' 个）');
+      } },
+
+    { name: '开始收音',
+      run: function () {
+        if (!USE_MIC) setTone(196.0, 0.25);     /* G3 */
+        click($('btnMic'));
+      }, wait: 1200 },
+
+    { name: 'G3 读数',
+      run: function () {
+        var r = readout();
+        info('读数：' + r.note + ' / ' + r.freq + ' / ' + r.degree + ' / ' + r.string + ' / ' + r.cents);
+        ok(win.CHORD_STATE.micOn === true, '收音已开始（' + (USE_MIC ? '真实 getUserMedia' : '注入振荡器') + '）');
+        ok(r.note === 'G', '音名识别为 G（实际 ' + r.note + '）');
+        ok(Math.abs(hz() - 196.0) < 1.5, '频率约 196Hz（实际 ' + hz().toFixed(1) + '）');
+        ok(r.degree.indexOf('5级') === 0, 'C 大调里是 5 级（实际 ' + r.degree + '）');
+        ok(r.string.indexOf('3弦') > 0, '归属 3 弦 G3（实际 ' + r.string + '）');
+        ok(r.cls.indexOf('in-tune') > 0, '判定为“准”（class=' + r.cls + '）');
+        ok(r.cents.indexOf('准') > 0, '音分读数：' + r.cents);
+        ok(parseFloat(r.needle) === 50, '指针在正中（left=' + r.needle + '）');
+        ok(scans() > 0, '指板上 G 的音位被高亮（' + scans() + ' 处）');
+      } },
+
+    { name: '换成 B3',
+      run: function () { if (!USE_MIC) setTone(246.94, 0.25); },
+      wait: USE_MIC ? 4200 : 1000 },
+
+    { name: 'B3 读数',
+      run: function () {
+        var r = readout();
+        info('读数：' + r.note + ' / ' + r.freq + ' / ' + r.degree + ' / ' + r.string);
+        ok(r.note === 'B', '音名变为 B（实际 ' + r.note + '）');
+        ok(Math.abs(hz() - 246.94) < 1.5, '频率约 246.9Hz（实际 ' + hz().toFixed(1) + '）');
+        ok(r.degree.indexOf('7级') === 0, 'C 大调里是 7 级（实际 ' + r.degree + '）');
+        ok(r.string.indexOf('2弦') > 0, '归属 2 弦 B3（实际 ' + r.string + '）');
+      } },
+
+    { name: '切到多利亚',
+      run: function () { ok(!!chip('scale', 'dorian'), '找到多利亚 chip'); },
+      wait: 500 },
+
+    { name: '多利亚下的读数',
+      run: function () {
+        var r = readout();
+        info('标题 ' + $('scaleTitle').textContent + ' / 级数 ' + r.degree);
+        ok(win.CHORD_STATE.scaleId === 'dorian', '调式已切换为多利亚');
+        ok($('scaleTitle').textContent.indexOf('多利亚') > 0, '标题已更新');
+        ok(r.degree.indexOf('7级') === 0 && r.degree.indexOf('调外音') > 0, 'B 在 C 多利亚里是 7 级且为调外音（实际 ' + r.degree + '，Dorian 自身的 7 级是 B♭）');
+        ok($('modeDesc').textContent.indexOf('\u266d3') > 0, '调式说明含特征音 ♭3');
+      } },
+
+    { name: '切主调到降 E',
+      run: function () { ok(!!chip('key', 3), '找到降 E 主调 chip'); },
+      wait: 500 },
+
+    { name: '降 E 多利亚下的读数',
+      run: function () {
+        var r = readout();
+        info('标题 ' + $('scaleTitle').textContent + ' / 级数 ' + r.degree + ' / class ' + r.cls);
+        ok(win.CHORD_STATE.keyPc === 3, '主调切到降 E');
+        ok(r.degree.indexOf('\u266d6') === 0, 'B 在 E♭ 多利亚里是 ♭6 级（实际 ' + r.degree + '）');
+        ok(r.degree.indexOf('调外音') > 0, '并标注为调外音');
+        ok(r.cls.indexOf('out-scale') > 0, '调外音换了颜色（class=' + r.cls + '）');
+      } },
+
+    { name: '偏高 30 音分',
+      run: function () { if (!USE_MIC) setTone(196.0, 0.25, 30); },
+      wait: USE_MIC ? 4200 : 1000 },
+
+    { name: '音分偏高的读数',
+      run: function () {
+        var r = readout();
+        info('音分 ' + r.cents + ' 指针 ' + r.needle);
+        ok(r.cents.indexOf('偏高') > 0, '显示偏高（' + r.cents + '）');
+        ok(parseFloat(r.needle) > 65, '指针偏右（left=' + r.needle + '）');
+        ok(r.cls.indexOf('in-tune') < 0, '不再标记为“准”');
+      } },
+
+    { name: '停止收音',
+      run: function () { click($('btnMic')); },
+      wait: 500 },
+
+    { name: '停止后的界面',
+      run: function () {
+        var r = readout();
+        ok(win.CHORD_STATE.micOn === false, '已停止收音');
+        ok(r.note === '--' && r.cents.indexOf('--') === 0, '读数复位（' + r.note + ' / ' + r.cents + '）');
+        ok(scans() === 0, '指板高亮已清除');
+        ok(r.micBtn.indexOf('开始收音') === 0, '按钮回到“开始收音”');
+      } },
+
+    { name: '切换标注模式',
+      run: function () { click($('btnScaleLabel')); },
+      wait: 300 },
+
+    { name: '只级数模式',
+      run: function () {
+        ok($('btnScaleLabel').textContent === '只级数', '按钮文案：' + $('btnScaleLabel').textContent);
+        ok(names() === 0, '不再输出音名（' + names() + ' 个）');
+      } },
+
+    { name: '切回和弦页签',
+      run: function () { click(doc.querySelectorAll('.tab')[0]); },
+      wait: 500 },
+
+    { name: '和弦板块仍然正常',
+      run: function () {
+        ok(win.CHORD_STATE.tab === 'chord', '已切回和弦页签');
+        ok(doc.getElementById('viewChord').hidden === false, '和弦板块可见');
+        ok(doc.querySelectorAll('.card').length > 0, '指法卡片已渲染（' + doc.querySelectorAll('.card').length + ' 张）');
+        ok(flat($('chordName').textContent).length > 0, '和弦名有内容（' + $('chordName').textContent + '，主调已被前面的步骤切成降 E）');
+      } }
+  ];
+
+  var idx = 0;
+  function next() {
+    if (idx >= steps.length) return done();
+    var st = steps[idx];
+    idx++;
+    try {
+      st.run();
+    } catch (e) {
+      fails++;
+      lines.push('EXCEPTION @' + st.name + ': ' + (e && e.message));
+      if (e && e.stack) lines.push('      ' + String(e.stack).split('\n').slice(0, 3).join(' / '));
+    }
+    report('STEP ' + idx + '/' + steps.length + ' ' + st.name + SEP + lines.join(SEP));
+    window.setTimeout(next, st.wait || 250);
+  }
+
+  function done() {
+    try { if (osc) osc.stop(); } catch (e) {}
+    try { win.Tuner.stop({}); } catch (e) {}
+    lines.push('');
+    lines.push(fails === 0 ? 'TUNER_TESTS_PASSED' : ('TUNER_TESTS_FAILED: ' + fails));
+    report(lines.join('\n'));
+  }
+
+  var booted = false;
+  function boot() {
+    if (booted) return;
+    booted = true;
+    doc = frame.contentDocument;
+    win = frame.contentWindow;
+    try {
+      if (!doc || !win || !win.CHORD_STATE) {
+        fails++;
+        lines.push('EXCEPTION: iframe 里的页面还没准备好（CHORD_STATE 不存在）');
+        return done();
+      }
+      report('STEP 0 已载入被测页面');
+      next();
+    } catch (e) {
+      fails++;
+      lines.push('EXCEPTION @boot: ' + (e && e.message));
+      done();
+    }
+  }
+  /* iframe 就绪判断：不能只看 readyState —— about:blank 也是 complete，
+     所以轮询等被测页面把 CHORD_STATE 挂上来（app.js 初始化完成）。
+     file:// 下 iframe 有可能在本脚本执行前就加载完了，光靠 onload 会漏掉。 */
+  frame.onload = function () { win = frame.contentWindow; if (win && win.CHORD_STATE) boot(); };
+  (function poll(n) {
+    win = frame.contentWindow;
+    if (win && win.CHORD_STATE) return boot();
+    if (n > 120) {
+      fails++;
+      lines.push('EXCEPTION: 等不到被测页面初始化（12 秒超时）');
+      return done();
+    }
+    window.setTimeout(function () { poll(n + 1); }, 100);
+  })(0);
+})();
+</script>
+</body>
+</html>

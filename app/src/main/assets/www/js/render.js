@@ -113,7 +113,49 @@
   var SINGLE_MARKERS = [3, 5, 7, 9, 15, 17, 19, 21];
 
   /* 指板几何参数（app.js 计算滚动位置时也要用，统一从这里取） */
-  var NECK_METRICS = { fretW: 42, rowH: 30, smallRowH: 24, leftPad: 46, topPad: 26, botPad: 20 };
+  var NECK_METRICS = { fretW: 42, rowH: 30, smallRowH: 24, scaleRowH: 36, leftPad: 46, topPad: 26, botPad: 20 };
+
+  /* 画指板的“公共骨架”：木纹底 + 品记 / 品丝 + 琴枕 + 弦 + 品号 + 弦名。
+     和弦视图和音阶视图都调用它，几何完全一致，只是后面叠的内容不同。 */
+  function boardWoodAndMarkers(out, o) {
+    out.push('<rect class="nk-wood" x="' + o.leftPad + '" y="' + (o.topPad - 8) + '" width="' + num(o.width - o.leftPad - 8) + '" height="' + (6 * o.rowH + 16) + '" rx="5"/>');
+
+    var MARK_Y = o.topPad + 2.5 * o.rowH;
+    var i;
+    for (i = 0; i < SINGLE_MARKERS.length; i++) {
+      var mf = SINGLE_MARKERS[i];
+      if (mf > o.maxFret) break;
+      out.push('<circle class="nk-marker" cx="' + num(o.cx(mf)) + '" cy="' + num(MARK_Y) + '" r="3.6"/>');
+    }
+    if (o.maxFret >= 12) {
+      out.push('<circle class="nk-marker" cx="' + num(o.cx(12)) + '" cy="' + num(MARK_Y - 10) + '" r="3.6"/>');
+      out.push('<circle class="nk-marker" cx="' + num(o.cx(12)) + '" cy="' + num(MARK_Y + 10) + '" r="3.6"/>');
+    }
+    if (o.maxFret >= 24) {
+      out.push('<circle class="nk-marker" cx="' + num(o.cx(24)) + '" cy="' + num(MARK_Y - 10) + '" r="3.6"/>');
+      out.push('<circle class="nk-marker" cx="' + num(o.cx(24)) + '" cy="' + num(MARK_Y + 10) + '" r="3.6"/>');
+    }
+  }
+
+  function boardGrid(out, o) {
+    var i;
+    for (i = 1; i <= o.maxFret; i++) {
+      out.push('<line class="nk-fret" x1="' + num(o.xx(i)) + '" y1="' + (o.topPad - 4) + '" x2="' + num(o.xx(i)) + '" y2="' + (o.topPad + 6 * o.rowH + 4) + '"/>');
+    }
+    out.push('<line class="nk-nut" x1="' + o.leftPad + '" y1="' + (o.topPad - 6) + '" x2="' + o.leftPad + '" y2="' + (o.topPad + 6 * o.rowH + 6) + '"/>');
+
+    for (i = 0; i < 6; i++) {
+      var w = 2.9 - i * 0.34;
+      out.push('<line class="nk-string" stroke-width="' + num(w) + '" x1="' + (o.leftPad - 4) + '" y1="' + num(o.yy(i)) + '" x2="' + num(o.width - 6) + '" y2="' + num(o.yy(i)) + '"/>');
+    }
+    for (i = 1; i <= o.maxFret; i++) {
+      out.push('<text class="nk-fretnum" x="' + num(o.cx(i)) + '" y="' + (o.topPad - 13) + '" text-anchor="middle">' + i + '</text>');
+    }
+    var names = ['E', 'A', 'D', 'G', 'B', 'e'];
+    for (i = 0; i < 6; i++) {
+      out.push('<text class="nk-stringname" x="8" y="' + num(o.yy(i) + 3.5) + '">' + names[i] + '</text>');
+    }
+  }
 
   function neck(opts) {
     opts = opts || {};
@@ -140,8 +182,11 @@
     var out = [];
     out.push('<svg width="' + num(width) + '" height="' + height + '" viewBox="0 0 ' + num(width) + ' ' + height + '" xmlns="http://www.w3.org/2000/svg" role="img">');
 
-    /* 琴颈底色 */
-    out.push('<rect class="nk-wood" x="' + leftPad + '" y="' + (topPad - 8) + '" width="' + num(width - leftPad - 8) + '" height="' + (6 * rowH + 16) + '" rx="5"/>');
+    var geo = { maxFret: maxFret, fretW: fretW, rowH: rowH, leftPad: leftPad, topPad: topPad,
+                width: width, yy: yy, xx: xx, cx: cx };
+
+    /* 琴颈底色 + 品记 */
+    boardWoodAndMarkers(out, geo);
 
     /* 高亮位置窗口 */
     if (v) {
@@ -151,23 +196,6 @@
         var lo = Math.min.apply(null, press), hi = Math.max.apply(null, press);
         out.push('<rect class="nk-window" x="' + num(xx(lo - 1)) + '" y="' + (topPad - 8) + '" width="' + num((hi - lo + 1) * fretW) + '" height="' + (6 * rowH + 16) + '" rx="8"/>');
       }
-    }
-
-    /* 品记：画在 G 弦(索引3) 与 D 弦(索引2) 之间，也就是琴颈正中，和真实指板一致 */
-    var MARK_Y = topPad + 2.5 * rowH;
-    var i;
-    for (i = 0; i < SINGLE_MARKERS.length; i++) {
-      var mf = SINGLE_MARKERS[i];
-      if (mf > maxFret) break;
-      out.push('<circle class="nk-marker" cx="' + num(cx(mf)) + '" cy="' + num(MARK_Y) + '" r="3.6"/>');
-    }
-    if (maxFret >= 12) {
-      out.push('<circle class="nk-marker" cx="' + num(cx(12)) + '" cy="' + num(MARK_Y - 10) + '" r="3.6"/>');
-      out.push('<circle class="nk-marker" cx="' + num(cx(12)) + '" cy="' + num(MARK_Y + 10) + '" r="3.6"/>');
-    }
-    if (maxFret >= 24) {
-      out.push('<circle class="nk-marker" cx="' + num(cx(24)) + '" cy="' + num(MARK_Y - 10) + '" r="3.6"/>');
-      out.push('<circle class="nk-marker" cx="' + num(cx(24)) + '" cy="' + num(MARK_Y + 10) + '" r="3.6"/>');
     }
 
     /* 全部和弦音（淡色底图，可选） */
@@ -189,32 +217,13 @@
       }
     }
 
-    /* 品丝 */
-    for (i = 1; i <= maxFret; i++) {
-      out.push('<line class="nk-fret" x1="' + num(xx(i)) + '" y1="' + (topPad - 4) + '" x2="' + num(xx(i)) + '" y2="' + (topPad + 6 * rowH + 4) + '"/>');
-    }
-    out.push('<line class="nk-nut" x1="' + leftPad + '" y1="' + (topPad - 6) + '" x2="' + leftPad + '" y2="' + (topPad + 6 * rowH + 6) + '"/>');
-
-    /* 弦（低音弦更粗） */
-    for (i = 0; i < 6; i++) {
-      var w = 2.9 - i * 0.34;
-      out.push('<line class="nk-string" stroke-width="' + num(w) + '" x1="' + (leftPad - 4) + '" y1="' + num(yy(i)) + '" x2="' + num(width - 6) + '" y2="' + num(yy(i)) + '"/>');
-    }
-
-    /* 品号 */
-    for (i = 1; i <= maxFret; i++) {
-      out.push('<text class="nk-fretnum" x="' + num(cx(i)) + '" y="' + (topPad - 13) + '" text-anchor="middle">' + i + '</text>');
-    }
-
-    /* 弦名 */
-    var names = ['E', 'A', 'D', 'G', 'B', 'e'];
-    for (i = 0; i < 6; i++) {
-      out.push('<text class="nk-stringname" x="8" y="' + num(yy(i) + 3.5) + '">' + names[i] + '</text>');
-    }
+    /* 品丝 + 琴枕 + 弦 + 品号 + 弦名 */
+    boardGrid(out, geo);
 
     /* 当前指法高亮 */
     if (v) {
       var barre = opts.barre || null;
+      var i;
       for (i = 0; i < 6; i++) {
         var fr = v[i];
         if (fr < 0) {
@@ -248,9 +257,81 @@
     return out.join('');
   }
 
+  /* ======================================================================
+   * 音阶指板：把「主调 + 调式」的全部音画在指板上，每个音同时标
+   *   级数（如 ♭3）+ 按调式正确拼写的音名（如 B♭）
+   *   主音用实心点、其它级数用空心点；检测到的音会套一个高亮圈。
+   * ==================================================================== */
+  function scaleNeck(opts) {
+    opts = opts || {};
+    var maxFret = opts.maxFret || 24;
+    var fretW = NECK_METRICS.fretW;
+    var rowH = opts.rowH || (global.innerHeight && global.innerHeight < 700
+      ? NECK_METRICS.smallRowH + 2 : NECK_METRICS.scaleRowH);
+    var leftPad = NECK_METRICS.leftPad, topPad = NECK_METRICS.topPad, botPad = NECK_METRICS.botPad;
+    var height = topPad + 6 * rowH + botPad;
+    var width = leftPad + maxFret * fretW + fretW * 0.55 + 10;
+
+    var tones = opts.tones || [];            /* [{pc, degree, degreeLabel, name, isRoot}] */
+    var scanPc = (opts.scanPc === undefined || opts.scanPc === null) ? -1 : opts.scanPc;  /* 麦克风测到的音 */
+    var labelMode = opts.labelMode || 'both'; /* both | degree | name */
+
+    function yy(s) { return topPad + (5 - s) * rowH; }
+    function xx(f) { return leftPad + f * fretW; }
+    function cx(f) { return leftPad + (f - 0.5) * fretW; }
+    var xOpen = leftPad - 17;
+
+    /* 每个音高类对应哪个音阶音 */
+    var byPc = {};
+    var i, k;
+    for (i = 0; i < tones.length; i++) byPc[tones[i].pc] = tones[i];
+
+    var out = [];
+    out.push('<svg width="' + num(width) + '" height="' + height + '" viewBox="0 0 ' + num(width) + ' ' + height + '" xmlns="http://www.w3.org/2000/svg" role="img">');
+    boardWoodAndMarkers(out, { maxFret: maxFret, rowH: rowH, leftPad: leftPad, topPad: topPad,
+                               width: width, xx: xx, cx: cx });
+    boardGrid(out, { maxFret: maxFret, rowH: rowH, leftPad: leftPad, topPad: topPad,
+                     width: width, yy: yy, xx: xx, cx: cx });
+
+    /* 音阶音 */
+    var dotR = rowH >= 32 ? 12 : 10;
+    for (var s = 0; s < 6; s++) {
+      for (var f = 0; f <= maxFret; f++) {
+        var pc = global.Chord.pcAt(s, f);
+        var tone = byPc[pc];
+        if (!tone) continue;
+        var x = (f === 0) ? xOpen : cx(f);
+        var y = yy(s);
+        var mainCls = tone.isRoot ? 'nk-scale-root' : 'nk-scale-dot';
+        out.push('<circle class="' + mainCls + '" cx="' + num(x) + '" cy="' + num(y) + '" r="' + dotR + '"/>');
+        /* 级数（主音只写 1；其它写 ♭3 / 7 这种） */
+        var label = '';
+        if (labelMode === 'both' || labelMode === 'degree') label = tone.degreeLabel;
+        if (label) {
+          out.push('<text class="' + (tone.isRoot ? 'nk-scale-root-text' : 'nk-scale-text') +
+                   '" x="' + num(x) + '" y="' + num(y + 3.4) + '" text-anchor="middle" font-size="' +
+                   (label.length > 1 ? 9 : 10.5) + '">' + esc(label) + '</text>');
+        }
+        /* 音名写在点的下方 */
+        if (labelMode === 'both' || labelMode === 'name') {
+          out.push('<text class="nk-scale-name" x="' + num(x) + '" y="' + num(y + dotR + 8.5) +
+                   '" text-anchor="middle" font-size="' + (tone.name.length > 2 ? 7.5 : 8.5) + '">' +
+                   esc(tone.name) + '</text>');
+        }
+        /* 麦克风测到的音：加一圈高亮 */
+        if (scanPc === pc) {
+          out.push('<circle class="nk-scan" cx="' + num(x) + '" cy="' + num(y) + '" r="' + (dotR + 3.5) + '"/>');
+        }
+      }
+    }
+    out.push('</svg>');
+    return out.join('');
+  }
+
   global.Render = {
     chordBox: chordBox,
     neck: neck,
+    scaleNeck: scaleNeck,
     neckMetrics: NECK_METRICS,
     esc: esc
   };

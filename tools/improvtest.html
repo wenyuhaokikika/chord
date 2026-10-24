@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>即兴引擎自检</title></head>
+<body>
+<script>
+window.onerror = function (msg, src, line, col, err) {
+  var o = document.getElementById('out');
+  if (o) o.textContent = 'JS_ERROR: ' + msg + ' @' + String(src).split('/').pop() + ':' + line +
+    '\n' + ((err && err.stack) || '');
+};
+</script>
+<pre id="out">running...</pre>
+<script src="../app/src/main/assets/www/js/music.js"></script>
+<script src="../app/src/main/assets/www/js/chord.js"></script>
+<script src="../app/src/main/assets/www/js/render.js"></script>
+<script src="../app/src/main/assets/www/js/audio.js"></script>
+<script src="../app/src/main/assets/www/js/voices.js"></script>
+<script src="../app/src/main/assets/www/js/pitch.js"></script>
+<script src="../app/src/main/assets/www/js/patterns.js"></script>
+<script src="../app/src/main/assets/www/js/transport.js"></script>
+<script src="../app/src/main/assets/www/js/drums.js"></script>
+<script src="../app/src/main/assets/www/js/backing.js"></script>
+<script src="../app/src/main/assets/www/js/store.js"></script>
+<script src="../app/src/main/assets/www/js/llm.js"></script>
+<script src="../app/src/main/assets/www/js/agentqueue.js"></script>
+<script src="../app/src/main/assets/www/js/band.js"></script>
+<script src="../app/src/main/assets/www/js/improv.js"></script>
+<script src="../app/src/main/assets/www/js/crafts.js"></script>
+<script>
+(function () {
+  var M = window.Music, C = window.Chord, B = window.Backing, Imp = window.Improv;
+  var T = window.Transport, LLM = window.LLM, S = window.Store, Band = window.Band;
+  var Crafts = window.Crafts;
+  var lines = [], fails = 0;
+
+  function flush() {
+    var o = document.getElementById('out');
+    if (o) o.textContent = lines.join('\n');
+  }
+  function ok(cond, msg) {
+    lines.push((cond ? 'PASS  ' : 'FAIL  ') + msg);
+    if (!cond) fails++;
+    flush();
+  }
+  function info(msg) { lines.push('      ' + msg); flush(); }
+
+  function prog(id) { return B.cloneProgression(B.progressionById(id)); }
+  function optsFor(progId, styleId, bias, seed) {
+    var p = prog(progId);
+    var grid = Imp.progressionGrid(p, 0, 'major');
+    return {
+      grid: grid, progression: p, keyPc: 0, scaleId: 'major', bars: grid.bars,
+      bpm: 100, styleId: styleId || 'penta', bias: bias === undefined ? 40 : bias,
+      preferFlat: false, seed: seed, rangeBias: 0.5,
+      progressionName: p.zh, instanceName: '测试实例',
+      progressText: '测试实例 · 走向「' + p.zh + '」'
+    };
+  }
+  function chordPcsAt(score, bar, slot) {
+    var grid = Imp.progressionGrid(score.progression, score.keyPc, score.scaleId);
+    var ch = Imp.chordAtSlot(grid, bar, slot);
+    if (!ch) return [];
+    var q = C.qualityById(ch.qualityId), out = [];
+    for (var i = 0; i < q.intervals.length; i++) out.push(M.mod12(ch.rootPc + q.intervals[i]));
+    return out;
+  }
+
+  /* ---------- 1. 简谱记号 / 调名 ---------- */
+  var t1 = Imp.parseToken('b3');
+  ok(t1.type === 'note' && t1.degree === 3 && t1.acc === -1, 'b3 解析为 ♭3');
+  var t2 = Imp.parseToken("5'");
+  ok(t2.type === 'note' && t2.oct === 1, "5' 解析为高八度");
+  ok(Imp.parseToken('1,').oct === -1, '1, 解析为低八度');
+  ok(Imp.parseToken('-').type === 'hold', '- 解析为延音');
+  ok(Imp.parseToken('0').type === 'rest', '0 解析为休止');
+  ok(Imp.tokenOf(3, -1, 0) === 'b3' && Imp.tokenOf(1, 0, 1) === "1'", '记号生成 / 回写');
+  ok(Imp.normalizeToken('\u266d3') === 'b3', '♭3 会被规范化成 b3');
+  ok(Imp.normalizeToken('??') === '0', '非法记号降级成休止');
+  ok(Imp.parseKeyName('Bb') === 10, 'Bb → 10');
+  ok(Imp.parseKeyName('\u964dE') === 3, '降E → 3（实际 ' + Imp.parseKeyName('\u964dE') + '）');
+  ok(Imp.parseKeyName('F#') === 6 && Imp.parseKeyName('bE') === 3, 'F# / bE 写法');
+  ok(Imp.parseKeyName('H') === -1, '非法调名返回 -1');
+  ok(Imp.scaleIdFromName('多利亚') === 'dorian' && Imp.scaleIdFromName('minor') === 'minor', '调式名中英互认');
+
+  /* ---------- 2. 走向网格 ---------- */
+  var pop = optsFor('pop4', 'penta', 40, 1);
+  ok(pop.grid.bars === 4 && pop.grid.totalBeats === 16, 'I–V–vi–IV → 4 小节 / 16 拍');
+  ok(B.chordName(Imp.chordAtSlot(pop.grid, 0, 0), false) === 'C', '第 1 小节开头 C');
+  ok(B.chordName(Imp.chordAtSlot(pop.grid, 1, 0), false) === 'G', '第 2 小节开头 G');
+  ok(B.chordName(Imp.chordAtSlot(pop.grid, 2, 0), false) === 'Am', '第 3 小节开头 Am');
+  ok(B.chordName(Imp.chordAtSlot(pop.grid, 3, 0), false) === 'F', '第 4 小节开头 F');
+
+  /* ---------- 3. 风格 / Bias ---------- */
+  var penta = Imp.stylePcs(0, 'penta');
+  var blues = Imp.stylePcs(0, 'blues');
+  ok(penta.indexOf(3) >= 0 && penta.indexOf(4) < 0, '五声音阶含 ♭3、不含 3');
+  ok(blues.indexOf(6) >= 0, '布鲁斯音阶含 ♭5（蓝调音）');
+  var cChord = B.chordAt(0, 'major', 1, 0, null);
+  var allow10 = Imp.allowedPcs(cChord, 0, 'penta', 10, false);
+  ok(allow10.length === 3 && allow10.indexOf(4) >= 0, 'Bias 10：只用和弦音 C E G');
+  var allow40 = Imp.allowedPcs(cChord, 0, 'penta', 40, false);
+  ok(allow40.indexOf(3) >= 0 && allow40.indexOf(0) >= 0, 'Bias 40：弱拍加入风格音阶');
+  var allow40s = Imp.allowedPcs(cChord, 0, 'penta', 40, true);
+  ok(allow40s.indexOf(3) < 0, 'Bias 40：强拍仍只允许和弦音');
+  ok(Imp.allowedPcs(cChord, 0, 'penta', 80, false) === null, 'Bias 80：放开半音限制');
+
+  /* ---------- 4. 本地作曲 ---------- */
+  var s0 = Imp.composeLocal(optsFor('pop4', 'penta', 0, 123));
+  ok(s0.bars.length === 4, '本地作曲输出 4 小节（实际 ' + s0.bars.length + '）');
+  var cellCount = 0, badCell = 0;
+  for (var b = 0; b < s0.bars.length; b++) {
+    if (s0.bars[b].slots.length !== 8) badCell++;
+    for (var s = 0; s < 8; s++) {
+      cellCount++;
+      if (s0.bars[b].slots[s] !== Imp.normalizeToken(s0.bars[b].slots[s])) badCell++;
+    }
+  }
+  ok(cellCount === 32 && badCell === 0, '32 个格子、记号全部规范（异常 ' + badCell + '）');
+  var octScore = Imp.normalizeScore({
+    keyPc: 0, scaleId: 'major', bpm: 90,
+    bars: [{ slots: ['1', "1'", '1,', '0', '-', "5'", '5,', '0'] }]
+  }, { bars: 1 });
+  var octHtml = Imp.renderScoreHtml(octScore);
+  ok(octHtml.indexOf('jp-oct up') >= 0 && octHtml.indexOf('jp-oct low') >= 0,
+     '简谱渲染出高/低八度点');
+  ok(octHtml.indexOf('\u2022') >= 0,
+     '八度点使用可见的圆点字符');
+  ok((octHtml.match(/jp-beat/g) || []).length === 4,
+     '一小节按 4 拍分组渲染');
+  ok(Imp.validateScore(s0).length === 0, '本地作曲通过校验器' +
+    (Imp.validateScore(s0).length ? '：' + Imp.validateScore(s0).join('；') : ''));
+  var s0stats = Imp.scoreStats(s0);
+  ok(s0stats.notes >= s0.bars.length * 4,
+     '旋律不是每拍只有一个音（' + s0stats.notes + ' 音 / ' + s0.bars.length + ' 小节）');
+  ok(s0stats.techs > 0, '本地旋律带了连奏/滑音技巧（' + s0stats.techs + ' 个）');
+  ok(s0stats.holds >= s0.bars.length,
+     '本地旋律有足够的延音/连音（' + s0stats.holds + ' 格 / ' + s0.bars.length + ' 小节）');
+  ok(s0.progressionName === '万能和弦 I–V–vi–IV' && s0.instanceName === '测试实例',
+     '谱面记录来源走向与实例：' + s0.progressionName + ' / ' + s0.instanceName);
+  ok(Imp.detailText(s0).indexOf('走向：万能和弦 I–V–vi–IV') > 0,
+     '谱面信息显示来源走向');
+  var range0 = Imp.noteRange(0, 0), range1 = Imp.noteRange(0, 1);
+  ok(range0.span >= 12 && range1.span > range0.span + 8,
+     '音域 Bias 0→1 扩大音域（' + range0.span + ' → ' + range1.span + ' 半音）');
+  var rstats = Imp.scoreStats(s0);
+  ok(rstats.maxMidi - rstats.minMidi >= 13,
+     '默认音域 Bias 0.5 的旋律跨超过一个八度（实际 ' +
+     (rstats.maxMidi - rstats.minMidi) + ' 半音）');
+  var wideOpts = optsFor('pop4', 'penta', 40, 123);
+  wideOpts.rangeBias = 1;
+  var wideS = Imp.composeLocal(wideOpts);
+  var wideStats = Imp.scoreStats(wideS);
+  ok(wideStats.maxMidi - wideStats.minMidi > rstats.maxMidi - rstats.minMidi,
+     '音域 Bias=1 比默认跨度更大（' + (wideStats.maxMidi - wideStats.minMidi) +
+     ' > ' + (rstats.maxMidi - rstats.minMidi) + '）');
+  ok(s0.rangeBias === 0.5, '谱面保存音域 Bias：' + s0.rangeBias);
+
+  /* craft 推荐/持久化 */
+  var sadRec = Crafts.localRecommend('凄凉的秋天，一个老人扫落叶', { keyPc: 0, scaleId: 'major' });
+  ok(sadRec.drumId === 'ballad' && sadRec.rhythmId === 'strum_ballad',
+     '凄凉提示词推荐慢歌鼓 + 慢歌扫弦');
+  ok(sadRec.bpmTop5.length === 5 && sadRec.bpmTop5[0] < sadRec.bpmTop5[4],
+     '推荐 5 个升序 BPM：' + sadRec.bpmTop5.join('/'));
+  ok(sadRec.bpm >= 40 && sadRec.bpm <= 240,
+     '另有一个单独推荐速度：' + sadRec.bpm + ' BPM');
+  var sadInst = Crafts.buildInstance(sadRec, sadRec.bpmTop5[2], { keyPc: 0, scaleId: 'major' });
+  ok(sadInst.drum.id === 'ballad' && sadInst.rhythm.id === 'strum_ballad' &&
+     sadInst.progression.id === sadRec.progressionId,
+     '推荐被组装成可播放的伴奏实例');
+  var craftObj = Crafts.saveFromScore({
+    title: '秋日测试作品', prompt: '凄凉的秋天，一个老人扫落叶',
+    recommendation: sadRec, chosen: { bpm: sadInst.bpm, drumId: sadRec.drumId },
+    instance: sadInst, tone: 'acoustic', styleId: 'penta'
+  }, s0);
+  ok(!!craftObj && !!Crafts.get(craftObj.id), 'craft 写入并可从存储读回');
+  ok(craftObj.prompt === '凄凉的秋天，一个老人扫落叶' && craftObj.instance.bpm === sadInst.bpm,
+     'craft 保存提示词和用户选择的实例/速度');
+  Crafts.addMessage(craftObj, 'user', '第二小节轻一点');
+  var craftBack = Crafts.get(craftObj.id);
+  ok(craftBack.messages.length === 1 && craftBack.messages[0].text === '第二小节轻一点',
+     'craft 会话消息写入数据库');
+  ok(craftBack.versions.length === 1 && craftBack.finalVersionId === 'v1',
+     'craft 保存初版，并标记为最终版本');
+  ok(craftBack.versions[0].settings &&
+     craftBack.versions[0].settings.bpm === sadInst.bpm &&
+     craftBack.versions[0].settings.drumId === 'ballad' &&
+     craftBack.versions[0].settings.rhythmId === 'strum_ballad',
+     '版本记录保存了 BPM / 鼓 / 节奏型快照');
+  var ver2 = Crafts.addVersion(craftBack, s0, { label: '对话修改', note: '尾句延长', source: 'ai' });
+  var withVersion = Crafts.get(craftObj.id);
+  ok(withVersion.versions.length === 2 && Crafts.finalVersion(withVersion).id === ver2.id,
+     '修改后追加新版本并自动成为最终版本');
+  Crafts.addMessage(withVersion, 'assistant', '已延长尾句。', ver2.id);
+  var withMsg = Crafts.get(craftObj.id);
+  ok(withMsg.messages[1].versionId === ver2.id,
+     '对话消息记录了对应的版本 id，可回看预览');
+  Crafts.remove(craftObj.id);
+  ok(!Crafts.get(craftObj.id), 'craft 可删除');
+  var noName = Imp.normalizeScore({ bars: s0.bars, progression: prog('pop4') });
+  ok(Imp.progressionLabel(noName) === '万能和弦 I–V–vi–IV',
+     '旧谱没有 progressionName 时从快照补出来源');
+  var nonChord = [];
+  for (b = 0; b < s0.bars.length; b++) {
+    for (s = 0; s < 8; s++) {
+      var tt = Imp.parseToken(s0.bars[b].slots[s]);
+      if (tt.type !== 'note') continue;
+      var midi = Imp.midiOfToken(tt, 0, 'major');
+      var pcs = chordPcsAt(s0, b, s);
+      if (pcs.length && pcs.indexOf(M.mod12(midi)) < 0) nonChord.push((b + 1) + '-' + (s + 1));
+    }
+  }
+  ok(nonChord.length === 0, 'Bias 0 的每一个音都是当前和弦音' +
+    (nonChord.length ? '：' + nonChord.slice(0, 5).join(' ') : ''));
+  var s1 = Imp.composeLocal(optsFor('pop4', 'blue', 90, 7));
+  ok(Imp.validateScore(s1).length === 0, 'Bias 90 + 蓝调风格也能通过校验');
+  ok(s1.bars.length === 4, '蓝调输出 4 小节');
+  var sA = Imp.composeLocal(optsFor('pop4', 'penta', 55, 1));
+  var sB = Imp.composeLocal(optsFor('pop4', 'penta', 55, 2));
+  ok(sA.bars.map(function (x) { return x.slots.join(' '); }).join('|') !==
+     sB.bars.map(function (x) { return x.slots.join(' '); }).join('|'),
+     '不同随机种子生成不同旋律');
+  var techCount = Imp.scoreStats(s0).techs;
+  info('本地作曲技巧数：' + techCount + '，统计：' + Imp.statsText(s0));
+
+  /* 指型规划：整段固定一个指型、不跨把位乱跳；可指定 Mi/La；越界提示 */
+  var fp = Imp.fingeringPlan(s0);
+  ok(fp.phrases.length === 1, '整段只使用一个指型（' + fp.phrases.length + ' 段）');
+  var fpMapped = 0, fpOutside = 0;
+  for (var fpk in fp.phrases[0].map) {
+    if (!fp.phrases[0].map.hasOwnProperty(fpk)) continue;
+    fpMapped++;
+    if (fp.phrases[0].map[fpk].outside) fpOutside++;
+  }
+  ok(fpMapped > 0, '指型规划映射了 ' + fpMapped + ' 个音');
+  ok(fpOutside <= fpMapped * 0.2, '自动指型大部分音在窗口内（窗口外 ' + fpOutside + ' 个）');
+  var autoCov = [];
+  ['mi', 'la', 'si', 're', 'sol'].forEach(function (sid) {
+    var p = Imp.fingeringPlan(s0, { shapeId: sid });
+    autoCov.push(sid + ':' + p.phrases[0].outside);
+  });
+  ok(fp.shapeId === 'mi' || fp.shapeId === 'la' || fp.shapeId === 'si' ||
+     fp.shapeId === 're' || fp.shapeId === 'sol',
+     '自动整段只选一个指型（auto=' + fp.shapeId + '，越界数 ' + autoCov.join(' ') + '）');
+  ok(fp.used.length > 0, '列出旋律用到的音：' + fp.used.join(' '));
+
+  var shapeOpts = Imp.shapeOptions(0, 'major');
+  ok(shapeOpts.length === 6, '指型下拉：自动 + 五种指型（' + shapeOpts.length + ' 项）');
+  var fpMi = Imp.fingeringPlan(s0, { shapeId: 'mi' });
+  ok(fpMi.shapeId === 'mi' && fpMi.base === 0 && fpMi.endFret === 6,
+     'C 调 Mi 型窗口 0–6 品（实际 ' + fpMi.base + '–' + fpMi.endFret + '）');
+  var fpLa = Imp.fingeringPlan(s0, { shapeId: 'la' });
+  ok(fpLa.shapeId === 'la' && fpLa.base === 5 && fpLa.endFret === 8,
+     'C 调 La 型窗口 5–8 品（实际 ' + fpLa.base + '–' + fpLa.endFret + '）');
+  var lowScore = Imp.normalizeScore({
+    keyPc: 0, scaleId: 'major', bpm: 100,
+    bars: [{ slots: ['5,,', '0', '0', '0', '0', '0', '0', '0'] }]
+  });
+  var fpLow = Imp.fingeringPlan(lowScore, { shapeId: 'la' });
+  ok(fpLow.warnings.length === 1 && fpLow.warnings[0].tooLow,
+     '指定 La 时低音 G2 会提示太低，而不是自动跳把位');
+  ok(fpLow.warnings[0].suggestions.join(' ').indexOf('Mi') >= 0 ||
+     fpLow.warnings[0].suggestions.join(' ').indexOf('Sol') >= 0,
+     '越界音提示可换的指型：' + fpLow.warnings[0].suggestions.join(' / '));
+
+  /* 小节交界：上一小节以延音结束时，不能标滑音 */
+  var transScore = Imp.normalizeScore({
+    keyPc: 0, scaleId: 'major', bpm: 100,
+    bars: [
+      { slots: ['1', '0', '0', '0', '0', '0', '0', '-'] },
+      { slots: ['3', '0', '0', '0', '0', '0', '0', '0'] }
+    ]
+  });
+  var badTrans = Imp.applyTransitions(transScore,
+    { transitions: [{ bar: 2, slot: 1, tech: 'slide' }] });
+  ok(badTrans.length === 0, '上一小节结尾是延音，滑音被校验器拒绝');
+  transScore.bars[0].slots[7] = '2';
+  var goodTrans = Imp.applyTransitions(transScore,
+    { transitions: [{ bar: 2, slot: 1, tech: 'slide' }] });
+  ok(goodTrans.length === 1 && transScore.bars[1].tech[0] === 'slide',
+     '上一小节最后一格是实际音符时，滑音才生效');
+  var withinScore = Imp.normalizeScore({
+    keyPc: 0, scaleId: 'major', bpm: 100,
+    bars: [{ slots: ['1', '3', '5', '0', '0', '0', '0', '0'] }]
+  });
+  var withinTrans = Imp.applyTransitions(withinScore,
+    { transitions: [{ bar: 1, slot: 2, tech: 'hammer' }] });
+  ok(withinTrans.length === 1 && withinScore.bars[0].tech[1] === 'hammer',
+     '小节内相邻音之间也能加连奏技巧');
+
+  /* 节奏和弦的高/中/低把位 */
+  var cChord = { rootPc: 0, qualityId: 'maj' };
+  var vLow = B.voicingFor(cChord, 'low');
+  var vMid = B.voicingFor(cChord, 'mid');
+  var vHigh = B.voicingFor(cChord, 'high');
+  ok(vLow && vMid && vHigh, 'C 和弦三个把位都能找到指法');
+  ok(vLow.position <= 4, '低把位 position=' + (vLow ? vLow.position : '-'));
+  ok(vMid.position >= 4 && vMid.position <= 10, '中把位 position=' + (vMid ? vMid.position : '-'));
+  ok(vHigh.position >= 8, '高把位 position=' + (vHigh ? vHigh.position : '-'));
+  ok(Imp.STYLES.length >= 7, '音乐风格扩展到 ' + Imp.STYLES.length + ' 种');
+  var tnames = window.Audio_ ? window.Audio_.toneNames() : [];
+  var hasDrive = false, hasDist = false;
+  for (var tni = 0; tni < tnames.length; tni++) {
+    if (tnames[tni].id === 'drive') hasDrive = true;
+    if (tnames[tni].id === 'distortion') hasDist = true;
+  }
+  ok(tnames.length >= 6 && hasDrive && hasDist,
+     '音色扩展到 ' + tnames.length + ' 种（含过载/失真）');
+
+  /* 连续 3 个同音会被校验器换掉（避免练习曲感） */
+  var repRaw = Imp.normalizeScore({
+    title: '重复音测试', keyPc: 0, scaleId: 'major', styleId: 'penta', bias: 40, bpm: 100,
+    progression: B.cloneProgression(B.progressionById('pop4')),
+    bars: [{ slots: ['3', '3', '3', '0', '3', '3', '0', '3'] }]
+  }, { bars: 1 });
+  var repGrid = Imp.progressionGrid(repRaw.progression, 0, 'major');
+  var repFixed = Imp.repairScore(repRaw, { grid: repGrid, bars: 1 }).score;
+  ok(repFixed.bars[0].slots.slice(0, 3).join(' ') !== '3 3 3',
+     '连续 3 个相同音会被换掉：' + repFixed.bars[0].slots.join(' '));
+  ok(Imp.validateScore(repFixed).length === 0, '换音后仍然合法');
+
+  /* ---------- 5. 延音 / 时值 ---------- */
+  var holdScore = Imp.normalizeScore({
+    keyPc: 0, scaleId: 'major', bpm: 100, styleId: 'penta', bias: 40,
+    bars: [{ slots: ['1', '-', '-', '0', '5', '-', '0', '0'] }]
+  }, { bars: 1 });
+  var hn = Imp.barNotes(holdScore, 0);
+  ok(hn.length === 2, '延音不重复发音：2 个音（实际 ' + hn.length + '）');
+  ok(hn[0].len === 3 && hn[1].len === 2, '第一个音占 3 格、第二个占 2 格（' + hn[0].len + '/' + hn[1].len + '）');
+  ok(hn[0].midi === 60 && hn[1].midi === 67, 'C4 / G4 音高正确');
+
+  /* ---------- 6. 文本导入 ---------- */
+  var text = [
+    'title=测试旋律',
+    'key=C',
+    'mode=major',
+    'bpm=90',
+    'C | 1 3 5 1',
+    'F | 4 6 1\' 6',
+    'G | 5 7 2\' 7',
+    'C | 1 3 5 1'
+  ].join('\n');
+  var ts = Imp.parseTextScore(text, {});
+  ok(ts.title === '测试旋律' && ts.keyPc === 0 && ts.bpm === 90, '文本头字段解析');
+  ok(ts.bars.length === 4, '文本 4 行 = 4 小节');
+  ok(ts.bars[0].slots.join(' ') === '1 - 3 - 5 - 1 -', '4 个四分音符自动展开成 8 格：' +
+    ts.bars[0].slots.join(' '));
+  ok(ts.barChords[0] === 'C' && ts.barChords[1] === 'F', '文本里的和弦标记保留');
+  ok(ts.bars[1].slots[4] === "1'", '高八度 1\' 保留');
+
+  /* ---------- 7. 简谱 → 和弦 ---------- */
+  var sug = Imp.suggestChords(ts);
+  var sugNames = sug.bars.map(function (x) { return x.name; }).join(' ');
+  ok(sugNames === 'C F G C', 'C–F–G–C 旋律配出 ' + sugNames);
+  ok(sug.progression.items.length === 4 && B.validateProgression(sug.progression).length === 0,
+     '配出的走向结构合法');
+  var used = Imp.useProgression(sug.progression);
+  ok(!!used && used.custom === true && S.getItem('progression', used.id) !== null,
+     '配和弦结果能存成自建走向（' + (used && used.id) + '）');
+
+  /* ---------- 8. 六线谱 ---------- */
+  var tab = Imp.scoreToTab(ts);
+  var tabLines = tab.split('\n');
+  ok(tabLines.length === 8, '六线谱 = 标题 + 6 行 + 说明（实际 ' + tabLines.length + ' 行）');
+  ok(tabLines[1].indexOf('e|') === 0 && tabLines[6].indexOf('E|') === 0, '六根弦标签 e B G D A E');
+  ok((tabLines[1].match(/\|/g) || []).length === ts.bars.length + 1,
+     '每小节都有小节线（' + (tabLines[1].match(/\|/g) || []).length + ' 条）');
+  ok(/[0-9]/.test(tabLines.slice(1, 7).join('\n')), '六线谱里写入了品位数字');
+
+  /* ---------- 9. 图片识别结果转换 ---------- */
+  var rec = Imp.scoreFromRecognition({
+    title: 'OCR 谱', key: 'Eb', mode: 'dorian', bpm: 88,
+    bars: [{ chord: 'Ebm', slots: ['1', '0', 'b3', '-', '5', '0', 'b7', '3'] }]
+  }, {});
+  ok(rec.keyPc === 3 && rec.scaleId === 'dorian' && rec.bpm === 88, '识别结果的主调 / 调式 / 速度');
+  ok(rec.bars.length === 1 && rec.bars[0].slots[2] === 'b3', '识别出的 b3 原样保留（不被校验器改掉）');
+  ok(rec.barChords[0] === 'Ebm', '识别结果保留谱面和弦标记');
+  ok(Imp.validateScore(rec).length === 0, '识别结果通过格式校验');
+
+  /* ---------- 10. JSON 提取 ---------- */
+  var ej = Imp.extractJson('好的，如下：\n```json\n{"bars":[{"slots":["1","0"]},],}\n```');
+  ok(!!ej && ej.bars && ej.bars.length === 1, '能从 markdown / 尾随逗号里提取 JSON');
+
+  /* ---------- 11. 存储（双谱库） ---------- */
+  var beforeScores = Imp.listScores().length;
+  var beforeTabs = Imp.listTabs().length;
+  var saved = Imp.saveScore(s0);
+  ok(!!saved && !!saved.score.id, '保存简谱后拿到 id：' + (saved && saved.score.id));
+  ok(Imp.listScores().length === beforeScores + 1, '简谱库 +1');
+  ok(Imp.listTabs().length === beforeTabs + 1, '六线谱库 +1（保存简谱时自动生成）');
+  var loaded = Imp.loadScore(saved.score.id);
+  ok(!!loaded && loaded.bars.length === 4, '能从简谱库载入');
+  ok(loaded.progressionName === '万能和弦 I–V–vi–IV' && loaded.instanceName === '测试实例',
+     '载入后仍保留来源走向 / 实例');
+  ok(S.getItem('tablature', 'tab-' + saved.score.id) !== null, '六线谱按 tab-<id> 入库');
+  Imp.deleteScore(saved.score.id);
+  ok(Imp.listScores().length === beforeScores && Imp.listTabs().length === beforeTabs,
+     '删除简谱会同时删掉对应的六线谱');
+
+  /* ---------- 12. 多 agent 流水线（mock 模型） ---------- */
+  LLM.save({ vendor: 'custom', base: 'https://mock.local/v1', model: 'mock', key: 'test' });
+  function mockOk(data) {
+    return { ok: true, content: JSON.stringify(data), usage: { total_tokens: 10 }, ms: 5, model: 'mock' };
+  }
+  var filler = {
+    bars: [
+      { slots: ['1', '0', '3', '-', '5', '0', '3', '2'] },
+      { slots: ['5', '0', '7', '-', '2\'', '0', '5', '5'] },
+      { slots: ['6', '0', '1\'', '-', '3\'', '0', '1\'', '-'] },
+      { slots: ['4', '0', '6', '-', '1\'', '0', '6', '-'] }
+    ]
+  };
+  var trans = { transitions: [{ bar: 2, slot: 1, tech: 'slide' }, { bar: 3, slot: 1, tech: 'bend' }] };
+  var polish = {
+    review: '保留动机，第二遍模进，句尾落在和弦音',
+    bars: filler.bars,
+    transitions: trans.transitions
+  };
+  var agentOpts = optsFor('pop4', 'penta', 40, 99);
+  agentOpts.title = 'mock 即兴';
+
+  var chain = Promise.resolve();
+
+  function queue(fn) { chain = chain.then(fn, function (e) { ok(false, '异步测试异常：' + (e.message || e)); }); }
+
+  queue(function () {
+    LLM.chat = function () {
+      return Promise.resolve(mockOk({
+        title: '热血测试', drumId: 'rock8', rhythmId: 'strum_folk',
+        progressionId: 'pop4', bpmTop5: [96, 100, 104, 108, 112],
+        reason: '提示词偏热血，推荐八分摇滚和流行走向。'
+      }));
+    };
+    return Crafts.recommend('热血、冲刺、摇滚', { keyPc: 0, scaleId: 'major' }).then(function (r) {
+      ok(r.ok && r.source === 'ai', '推荐 agent 走 LLM 分支');
+      ok(r.data.drumId === 'rock8' && r.data.rhythmId === 'strum_folk' &&
+         r.data.progressionId === 'pop4', 'LLM 推荐的鼓/节奏/走向被解析');
+      ok(r.data.bpmTop5.length === 5 && r.data.bpmTop5[0] === 96,
+         'LLM 推荐的 Top5 速度保留：' + r.data.bpmTop5.join('/'));
+    });
+  });
+
+  queue(function () {
+    var call = 0;
+    LLM.chat = function () {
+      call++;
+      if (call === 1) return Promise.resolve(mockOk({ structure: '起承转合', contour: '先上行再回落' }));
+      if (call === 2) return Promise.resolve(mockOk(filler));
+      if (call === 3) return Promise.resolve(mockOk(trans));
+      return Promise.resolve(mockOk(polish));
+    };
+    var steps = [];
+    return Imp.runAgents(agentOpts, function (st) { steps[st.index] = st; }).then(function (r) {
+      ok(r.ok === true, '四 agent 流水线成功' + (r.ok ? '' : '：' + r.error));
+      ok(r.calls === 4, '调用了 4 次模型（实际 ' + r.calls + '）');
+      ok(r.score && r.score.bars.length === 4, '拿到 4 小节谱面');
+      ok(r.score && r.score.progressionName === '万能和弦 I–V–vi–IV' &&
+         r.score.instanceName === '测试实例', 'AI 谱面保留来源走向 / 实例');
+      ok(r.score && r.score.bars[1].tech[0] === 'slide', '衔接/润色后的滑音落在第 2 小节开头');
+      ok(r.score && r.score.bars[2].tech[0] === 'bend', '第 3 小节开头是推弦');
+      ok(r.score && Imp.validateScore(r.score).length === 0, '流水线结果通过校验');
+      ok(steps.length === 5 && steps[0].status === 'ok' && steps[3].status === 'ok' && steps[4].status === 'ok',
+         '日志有 5 步（' + steps.map(function (x) { return x && x.status; }).join(',') + '）');
+      ok(r.usage === 40, 'token 统计累计 40（' + r.usage + '）');
+    });
+  });
+
+  queue(function () {
+    /* 主控 agent 失败：应继续填音，并在日志里标 warn */
+    var call = 0;
+    LLM.chat = function () {
+      call++;
+      if (call === 1) return Promise.reject(new Error('planner down'));
+      if (call === 2) return Promise.resolve(mockOk(filler));
+      if (call === 3) return Promise.resolve(mockOk(trans));
+      return Promise.resolve(mockOk(polish));
+    };
+    var steps = [];
+    return Imp.runAgents(agentOpts, function (st) { steps[st.index] = st; }).then(function (r) {
+      ok(r.ok === true, '主控 agent 失败时仍能出谱（降级）');
+      ok(steps[0] && steps[0].status === 'warn', '主控步骤标记为 warn');
+      ok(r.calls === 3, '只成功调用了填音 + 衔接 + 润色（' + r.calls + ' 次）');
+    });
+  });
+
+  queue(function () {
+    /* 填音 agent 失败：整条流水线应失败，而不是产出空谱 */
+    var call = 0;
+    LLM.chat = function () {
+      call++;
+      if (call === 1) return Promise.resolve(mockOk({ structure: 'ok' }));
+      return Promise.reject(new Error('filler down'));
+    };
+    var steps = [];
+    return Imp.runAgents(agentOpts, function (st) { steps[st.index] = st; }).then(function (r) {
+      ok(r.ok === false && /filler down/.test(r.error), '填音失败时流水线报错：' + r.error);
+      ok(steps[1] && steps[1].status === 'fail', '填音步骤标记为 fail');
+    });
+  });
+
+  queue(function () {
+    /* 衔接 agent 失败：应自动用本地技巧兜底 */
+    var call = 0;
+    LLM.chat = function () {
+      call++;
+      if (call === 1) return Promise.resolve(mockOk({ structure: 'ok' }));
+      if (call === 2) return Promise.resolve(mockOk(filler));
+      if (call === 3) return Promise.reject(new Error('transition down'));
+      return Promise.resolve(mockOk(polish));
+    };
+    var steps = [];
+    return Imp.runAgents(agentOpts, function (st) { steps[st.index] = st; }).then(function (r) {
+      ok(r.ok === true, '衔接 agent 失败时仍能出谱');
+      ok(steps[2] && steps[2].status === 'warn', '衔接步骤标记为 warn');
+      ok(Imp.validateScore(r.score).length === 0, '兜底后的谱面仍然合法');
+    });
+  });
+
+  queue(function () {
+    /* 润色 agent 失败：保留初稿，不能把已经能听的谱弄丢 */
+    var call = 0;
+    LLM.chat = function () {
+      call++;
+      if (call === 1) return Promise.resolve(mockOk({ structure: 'ok' }));
+      if (call === 2) return Promise.resolve(mockOk(filler));
+      if (call === 3) return Promise.resolve(mockOk(trans));
+      return Promise.reject(new Error('polish down'));
+    };
+    var steps = [];
+    return Imp.runAgents(agentOpts, function (st) { steps[st.index] = st; }).then(function (r) {
+      ok(r.ok === true, '润色失败时保留初稿');
+      ok(steps[3] && steps[3].status === 'warn', '润色步骤标记为 warn');
+      ok(Imp.validateScore(r.score).length === 0, '初稿仍然合法');
+    });
+  });
+
+  queue(function () {
+    /* 离线渲染：真的能出声，而且选中的音色必须一路传到 pluck */
+    var seen = [];
+    var oldPluck = window.Audio_.pluck;
+    window.Audio_.pluck = function (c, out, when, midi, dur, amp, opts) {
+      if (opts && opts.tone) seen.push(opts.tone);
+      return oldPluck.apply(window.Audio_, arguments);
+    };
+    var p = Imp.renderOffline(s0, { bpm: 120, sampleRate: 16000, tone: 'electric' }, 2);
+    if (!p) { window.Audio_.pluck = oldPluck; ok(false, '当前环境没有 OfflineAudioContext'); return; }
+    return p.then(function (data) {
+      window.Audio_.pluck = oldPluck;
+      var sum = 0, peak = 0;
+      for (var i = 0; i < data.length; i++) {
+        sum += data[i] * data[i];
+        if (Math.abs(data[i]) > peak) peak = Math.abs(data[i]);
+      }
+      var rms = Math.sqrt(sum / data.length);
+      ok(rms > 0.001 && peak > 0.01, '电吉他音色离线渲染有声音（RMS ' +
+        rms.toFixed(4) + '，峰值 ' + peak.toFixed(3) + '）');
+      ok(seen.length > 0 && seen.every(function (t) { return t === 'electric'; }),
+        '选中的音色传到了每个 pluck（' + seen.length + ' 次）');
+      info('离线渲染 ' + data.length + ' 个采样点');
+    }, function (e) {
+      window.Audio_.pluck = oldPluck;
+      ok(false, '离线渲染失败：' + (e && e.message));
+    });
+  });
+
+  queue(function () {
+    /* 实例播放：鼓 + 伴奏 + solo 一起启动，停止时全部掐掉 */
+    var inst = {
+      name: '测试实例', keyPc: 0, scaleId: 'major', bpm: 120,
+      progression: B.cloneProgression(B.progressionById('pop4')),
+      rhythm: B.cloneRhythm(B.rhythmById('arp5321')),
+      drum: Patterns.clone(Patterns.byId('rock')),
+      swing: 0.5, register: 'low'
+    };
+    Imp.setScore(s0);
+    var started = Band.startInstance(inst, s0, { tone: 'electric' });
+    ok(started === true && T.isRunning() === true, '伴奏实例 + solo 能启动 Transport');
+    ok(Band.state.instanceMode === true, '进入实例播放模式');
+    ok(Imp.engine.enabled() === true, '即兴引擎在实例模式里启用');
+    ok(Imp.engine.barSeconds(120) === 2, '一小节 4 拍 @120BPM = 2 秒');
+    ok(window.Voices.count() > 0, '排期后登记了 ' + window.Voices.count() + ' 个音源');
+    Band.stop();
+    ok(T.isRunning() === false && window.Voices.count() === 0, '停止后音源被掐掉、Transport 停住');
+  });
+
+  queue(function () {
+    /* 流式回调：mock LLM.streamChat，验证 onStream 拿到 reasoning/content 和 agent 标签 */
+    var call = 0;
+    LLM.streamChat = function (messages, opts, onEvent) {
+      call++;
+      var data;
+      if (call === 1) data = { structure: '起承转合', contour: '先上行再回落' };
+      else if (call === 2) data = filler;
+      else if (call === 3) data = trans;
+      else data = polish;
+      var text = JSON.stringify(data);
+      var mid = Math.floor(text.length / 2);
+      onEvent({ type: 'reasoning', text: '先想一下动机和呼吸。' });
+      onEvent({ type: 'content', text: text.slice(0, mid) });
+      onEvent({ type: 'content', text: text.slice(mid) });
+      return Promise.resolve({
+        ok: true, content: text, reasoning: '先想一下动机和呼吸。',
+        usage: { total_tokens: 10 }, ms: 1, model: 'mock'
+      });
+    };
+    var sopts = optsFor('pop4', 'penta', 40, 99);
+    sopts.stream = true;
+    var chunks = [];
+    return Imp.runAgents(sopts, function () {}, function (ev) { chunks.push(ev); }).then(function (r) {
+      ok(r.ok === true && r.calls === 4, '流式四 agent 流程成功（' + r.calls + ' 次）');
+      ok(chunks.length >= 8, 'onStream 收到 ' + chunks.length + ' 个片段');
+      ok(chunks.some(function (x) { return x.type === 'reasoning'; }), '流式片段包含 reasoning');
+      ok(chunks.some(function (x) { return x.agent === '填音'; }), '流式片段带 agent 标签（填音）');
+      ok(chunks.map(function (x) { return x.text; }).join('').indexOf('"bars"') >= 0 ||
+         chunks.map(function (x) { return x.text; }).join('').indexOf('slots') >= 0,
+         '流片里确实出现了谱面 JSON');
+    });
+  });
+
+  queue(function () {
+    /* 任务队列：同步任务、FIFO、异步任务 */
+    AgentQueue.register('syncmock', function (task, ctx) {
+      ctx.stream({ agent: 't', type: 'content', text: 'stream-' + task.title });
+      ctx.step({ index: 0, name: 'step', status: 'ok', detail: 'ok', ms: 0 });
+      return { ok: true, value: task.title };
+    });
+    var a = AgentQueue.enqueue({ kind: 'syncmock', title: 'A' });
+    var b = AgentQueue.enqueue({ kind: 'syncmock', title: 'B' });
+    ok(a.status === 'done' && b.status === 'done', '同步任务入队后立即按 FIFO 完成');
+    ok(a.result && a.result.value === 'A' && b.result.value === 'B', '队列结果顺序正确');
+    ok(a.stream.indexOf('stream-A') >= 0 && a.steps.length === 1, '队列保存流式文本与步骤');
+    ok(AgentQueue.isRunning() === false, '同步任务完成后队列空闲');
+
+    AgentQueue.register('asyncmock', function (task, ctx) {
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          ctx.stream({ agent: 't', type: 'content', text: 'async-done' });
+          resolve({ ok: true, value: 'async' });
+        }, 30);
+      });
+    });
+    var c = AgentQueue.enqueue({ kind: 'asyncmock', title: 'C' });
+    ok(c.status === 'running' && AgentQueue.isRunning() === true, '异步任务进入运行中');
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        ok(c.status === 'done' && c.result.value === 'async' && c.stream.indexOf('async-done') >= 0,
+          '异步任务完成后状态与流式文本正确');
+        ok(AgentQueue.cancel(c.id) === false, '已完成的任务不能再取消');
+        AgentQueue.clearDone();
+        ok(AgentQueue.tasks().length === 0, '清空已完成任务');
+        resolve();
+      }, 80);
+    });
+  });
+
+  queue(function () {
+    /* craft 会话修改：mock 模型返回新谱面，并把会话写入 craft */
+    LLM.chat = function () {
+      return Promise.resolve(mockOk({ reply: '已把结尾改轻。', bars: filler.bars }));
+    };
+    var ec = Crafts.saveFromScore({
+      title: '会话修改测试', prompt: '测试',
+      recommendation: null, chosen: { bpm: 100 }, instance: null
+    }, s0);
+    return Crafts.editScore(ec, '结尾轻一点').then(function (r) {
+      ok(r.score && r.score.bars.length === 4 && r.reply.indexOf('结尾') >= 0,
+         '会话 agent 返回修改后的谱面和说明');
+      ec.score = r.score;
+      Crafts.addMessage(ec, 'user', '结尾轻一点');
+      Crafts.addMessage(ec, 'assistant', r.reply);
+      var back = Crafts.get(ec.id);
+      ok(back && back.messages.length === 2 && back.score.bars.length === 4,
+         '修改结果和会话都写入 craft');
+      Crafts.remove(ec.id);
+    }, function (e) {
+      ok(false, '会话修改失败：' + (e.message || e));
+    });
+  });
+
+  chain.then(function () {
+    lines.push('');
+    lines.push(fails === 0 ? 'IMPROV_TESTS_PASSED' : ('IMPROV_TESTS_FAILED: ' + fails));
+    document.getElementById('out').textContent = lines.join('\n');
+  });
+})();
+</script>
+</body>
+</html>

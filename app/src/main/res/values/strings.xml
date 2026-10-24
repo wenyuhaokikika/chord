@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">和弦助手</string>
     <string name="webview_missing">当前系统缺少可用的 WebView 组件，无法显示界面。</string>
+    <string name="mic_denied">没有麦克风权限，无法调音。可在系统设置里为“和弦助手”打开麦克风权限。</string>
 </resources>

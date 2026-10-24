@@ -4,8 +4,9 @@
 项目自检总入口 —— Windows 上一条命令跑完全部检查。
 
   1. 引擎自检（tools/selftest.html）：乐理、指法合法性、指板坐标、性能
-  2. 界面自检（tools/uitest.html）：模拟点击 + 布局体检，默认跑 3 种手机视口 + 1 种桌面视口
-  3. APK 校验（dist/*.apk）：包名/权限/签名/图标/网页资源逐字节一致性
+  2. 即兴自检（tools/improvtest.html）：mock 四 agent、Bias、配和弦、六线谱、双库、离线音频
+  3. 界面自检（tools/uitest.html）：模拟点击 + 布局体检，默认跑 3 种手机视口 + 1 种桌面视口
+  4. APK 校验（dist/*.apk）：包名/权限/签名/图标/网页资源逐字节一致性
 
 用法：
     python tools/run_tests.py                 # 全部
@@ -124,6 +125,23 @@ def run_engine(browser, verbose):
     return passed
 
 
+def run_improv(browser, verbose):
+    print("【即兴自检】tools/improvtest.html（mock 模型流水线 + 本地作曲 + 离线音频）")
+    text, err = run_headless(browser, os.path.join(ROOT, "tools", "improvtest.html"))
+    if err:
+        print("  %s✗ %s%s" % (RED, err, RESET))
+        return False
+    total, fails, passed, notes = summarize(text)
+    print("  %s%d 条断言，%s%s" % (GREEN if passed else RED, total,
+                                   "全部通过" if passed else "%d 条失败" % len(fails), RESET))
+    if verbose:
+        for n in notes:
+            print("  %s%s%s" % (DIM, n, RESET))
+    for f in fails:
+        print("  %s%s%s" % (RED, f, RESET))
+    return passed
+
+
 def run_ui(browser, viewports, verbose):
     print("【2/3】界面自检  tools/uitest.html（模拟点击 + 布局体检）")
     allpass = True
@@ -196,6 +214,29 @@ def run_tool(cmd):
                           text=True, errors="replace", env=apk_env())
 
 
+def run_audio_page(verbose, page, title, module_dir):
+    """跑调音 / 鼓机的音频端到端测试（run_audio_test.py 起本地服务回传结果）"""
+    print(title)
+    script = os.path.join(ROOT, "tools", "run_audio_test.py")
+    args = [sys.executable, script, "--timeout", "120"]
+    if page != "tuner":
+        args += ["--page", page]
+    proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, errors="replace")
+    out = proc.stdout or ""
+    if verbose:
+        for line in out.splitlines():
+            print("  " + line)
+    fails = [l.strip() for l in out.splitlines() if l.strip().startswith("FAIL")]
+    passes = len([l for l in out.splitlines() if l.strip().startswith("PASS")])
+    okpass = "TESTS_PASSED" in out
+    print("  %s%d 条断言，%s%s" % (GREEN if okpass else RED, passes,
+                                    "全部通过" if okpass else "%d 条失败" % len(fails), RESET))
+    for f in fails:
+        print("  %s%s%s" % (RED, f, RESET))
+    return okpass
+
+
 def run_apk(verbose):
     print("【3/3】APK 校验  dist/*.apk")
     apks = sorted(glob.glob(os.path.join(ROOT, "dist", "*.apk")))
@@ -215,9 +256,19 @@ def run_apk(verbose):
             for line in badging.split("\n"):
                 if line.startswith(key):
                     print("  %s" % line.strip())
-        perms = [l for l in badging.split("\n") if l.startswith("uses-permission")]
-        print("  %s权限声明 %d 条%s%s" % (GREEN if not perms else YELLOW, len(perms),
-                                          "" if not perms else "（这个 App 本应零权限）", RESET))
+        perms = [l.strip() for l in badging.split("\n") if l.startswith("uses-permission")]
+        # 合法权限：录音（调音）+ 网络（只有即兴调用用户自己配置的模型 API 时才用）
+        allowed = ("RECORD_AUDIO", "INTERNET")
+        unexpected = [p for p in perms
+                      if not any(("android.permission." + a) in p for a in allowed)]
+        if perms:
+            names = "、".join(p.split("'")[1] for p in perms if "'" in p)
+            print("  %s权限声明 %d 条：%s%s" % (GREEN if not unexpected else RED, len(perms), names, RESET))
+        else:
+            print("  %s· 权限声明 0 条%s" % (YELLOW, RESET))
+        if unexpected:
+            print("  %s✗ 出现了预期外的权限：%s%s" % (RED, unexpected, RESET))
+            ok = False
     else:
         print("  %s· 没找到 aapt2，跳过包信息检查（可设 ANDROID_HOME）%s" % (YELLOW, RESET))
 
@@ -263,21 +314,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", action="store_true", help="只跑引擎自检")
     ap.add_argument("--ui", action="store_true", help="只跑界面自检")
+    ap.add_argument("--improv", action="store_true", help="只跑即兴自检（mock 模型 + 离线音频）")
     ap.add_argument("--apk", action="store_true", help="只校验 APK")
+    ap.add_argument("--audio", action="store_true", help="只跑音频端到端（调音 + 鼓机，稍慢）")
     ap.add_argument("--verbose", "-v", action="store_true", help="打印更多信息")
     ap.add_argument("--keep-open", action="store_true", help="跑完用可见窗口打开界面，方便手动点")
     args = ap.parse_args()
 
-    only = args.engine or args.ui or args.apk
+    only = args.engine or args.ui or args.improv or args.apk or args.audio
     do_engine = args.engine or not only
     do_ui = args.ui or not only
+    do_improv = args.improv or not only
     do_apk = args.apk or not only
+    do_audio = args.audio or not only
 
     browser = find_browser()
-    if (do_engine or do_ui) and not browser:
+    if (do_engine or do_ui or do_improv) and not browser:
         print("%s找不到 Chrome 或 Edge，无法跑网页自检。%s" % (RED, RESET))
-        print("也可以直接双击打开这两个文件看结果：tools/selftest.html 与 tools/uitest.html")
-        if not do_apk:
+        print("也可以直接双击打开这些文件看结果：tools/selftest.html、tools/improvtest.html、tools/uitest.html")
+        if not do_apk and not do_audio:
             return 1
     else:
         print("%s浏览器: %s%s\n" % (DIM, browser, RESET))
@@ -286,11 +341,21 @@ def main():
     if do_engine:
         results.append(("引擎自检", run_engine(browser, args.verbose)))
         print()
+    if do_improv:
+        results.append(("即兴自检", run_improv(browser, args.verbose)))
+        print()
     if do_ui:
         results.append(("界面自检", run_ui(browser, UI_VIEWPORTS, args.verbose)))
         print()
     if do_apk:
         results.append(("APK 校验", run_apk(args.verbose)))
+        print()
+    if do_audio:
+        results.append(("调音端到端", run_audio_page(args.verbose, "tuner",
+            "【调音端到端】tunertest.html（注入已知频率振荡器，跑完整条音频链路）", "tuner")))
+        print()
+        results.append(("鼓机端到端", run_audio_page(args.verbose, "drums",
+            "【鼓机端到端】drumtest.html（离线渲染音频，核对每一下敲击时刻）", "drums")))
         print()
 
     print("=" * 52)

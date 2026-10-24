@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 完全离线：不需要任何权限 -->
+    <!-- 录音：调音功能要收音，只有点了“开始收音”之后才会向系统申请。
+         网络：只有「即兴」调用你自己配置的大模型 API 时才用；
+         和弦、调音、鼓机、伴奏、谱库全部离线可用，不需要网络权限。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- 只有「即兴」功能在调用你自己配置的大模型 API 时才需要联网；
+         和弦、调音、鼓机、伴奏、谱库全部离线可用。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:allowBackup="true"

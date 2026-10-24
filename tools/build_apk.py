@@ -28,8 +28,8 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLCHAIN = os.path.join(ROOT, ".toolchain")
 
-VERSION_CODE = "1"
-VERSION_NAME = "1.0.0"
+VERSION_CODE = "8"
+VERSION_NAME = "1.3.0"
 PACKAGE = "com.chord.helper"
 MIN_SDK = "21"
 TARGET_SDK = "34"

@@ -6,6 +6,13 @@
 <script src="../app/src/main/assets/www/js/music.js"></script>
 <script src="../app/src/main/assets/www/js/chord.js"></script>
 <script src="../app/src/main/assets/www/js/render.js"></script>
+<script src="../app/src/main/assets/www/js/pitch.js"></script>
+<script src="../app/src/main/assets/www/js/patterns.js"></script>
+<script src="../app/src/main/assets/www/js/transport.js"></script>
+<script src="../app/src/main/assets/www/js/audio.js"></script>
+<script src="../app/src/main/assets/www/js/drums.js"></script>
+<script src="../app/src/main/assets/www/js/backing.js"></script>
+<script src="../app/src/main/assets/www/js/band.js"></script>
 <script>
 (function () {
   var M = window.Music, C = window.Chord, R = window.Render;
@@ -253,6 +260,267 @@
   }
   ok(labelsMismatch.length === 0 && checked >= 9,
      '横按指法全部 ' + checked + ' 个圆点音名正确（' + (labelsMismatch.length ? labelsMismatch.join(' | ') : '含横按重复标注') + '）');
+
+  /* ---------- 5. 调式与音名拼写 ---------- */
+  function toneLabels(keyPc, scaleId, preferFlat) {
+    var t = M.scaleTones(keyPc, scaleId, !!preferFlat);
+    var out = [];
+    for (var i = 0; i < t.length; i++) out.push(t[i].degreeLabel + t[i].name);
+    return out.join(' ');
+  }
+  ok(toneLabels(0, 'major') === '1C 2D 3E 4F 5G 6A 7B', 'C 大调音级标注：' + toneLabels(0, 'major'));
+  ok(toneLabels(0, 'dorian') === '1C 2D \u266d3E\u266d 4F 5G 6A \u266d7B\u266d',
+     'C 多利亚：' + toneLabels(0, 'dorian'));
+  ok(toneLabels(0, 'lydian') === '1C 2D 3E \u266f4F\u266f 5G 6A 7B', 'C 利底亚：' + toneLabels(0, 'lydian'));
+  ok(toneLabels(0, 'phrygian') === '1C \u266d2D\u266d \u266d3E\u266d 4F 5G \u266d6A\u266d \u266d7B\u266d',
+     'C 弗里几亚：' + toneLabels(0, 'phrygian'));
+  ok(toneLabels(0, 'locrian') === '1C \u266d2D\u266d \u266d3E\u266d 4F \u266d5G\u266d \u266d6A\u266d \u266d7B\u266d',
+     'C 洛克里亚：' + toneLabels(0, 'locrian'));
+  ok(toneLabels(0, 'mixolydian') === '1C 2D 3E 4F 5G 6A \u266d7B\u266d', 'C 混合利底亚：' + toneLabels(0, 'mixolydian'));
+  /* 降号调：降 E 大调第 3 级是 G，不能拼成 F## 之类 */
+  ok(toneLabels(3, 'major', true) === '1E\u266d 2F 3G 4A\u266d 5B\u266d 6C 7D', 'E\u266d 大调：' + toneLabels(3, 'major', true));
+  ok(toneLabels(3, 'dorian', true) === '1E\u266d 2F \u266d3G\u266d 4A\u266d 5B\u266d 6C \u266d7D\u266d',
+     'E\u266d 多利亚：' + toneLabels(3, 'dorian', true));
+
+  /* 同一个主调按升号拼写时是 D♯ 大调（理论调，会出现双升号）——拼写规则自洽 */
+  ok(toneLabels(3, 'major') === '1D♯ 2E♯ 3F♯♯ 4G♯ 5A♯ 6B♯ 7C♯♯',
+     'D♯ 大调（升号拼写）：' + toneLabels(3, 'major'));
+
+  /* 特征音（相对同主音大调改了哪些音）—— 必须和乐理书一致 */
+  var chars = {};
+  for (var mi = 0; mi < M.SCALES.length; mi++) chars[M.SCALES[mi].id] = M.scaleCharacter(M.SCALES[mi].id).join(' ');
+  ok(chars.major === '', '大调无特征音');
+  ok(chars.dorian === '\u266d3 \u266d7', '多利亚特征音：' + chars.dorian);
+  ok(chars.phrygian === '\u266d2 \u266d3 \u266d6 \u266d7', '弗里几亚特征音：' + chars.phrygian);
+  ok(chars.lydian === '\u266f4', '利底亚特征音：' + chars.lydian);
+  ok(chars.mixolydian === '\u266d7', '混合利底亚特征音：' + chars.mixolydian);
+  ok(chars.aeolian === '\u266d3 \u266d6 \u266d7', '爱奥利亚特征音：' + chars.aeolian);
+  ok(chars.locrian === '\u266d2 \u266d3 \u266d5 \u266d6 \u266d7', '洛克里亚特征音：' + chars.locrian);
+
+  /* 任意音 -> 级数（调音时用），包括调外音 */
+  function deg(pc, keyPc, scaleId, preferFlat) {
+    var a = M.annotateNote(pc, keyPc, scaleId, !!preferFlat);
+    return a.degreeLabel + a.name + (a.inScale ? '' : '*');
+  }
+  ok(deg(10, 0, 'dorian') === '\u266d7B\u266d', 'C 多利亚里 B\u266d 是 \u266d7 级（对应你说的 bB 写法）');
+  ok(deg(10, 0, 'major') === '\u266d7B\u266d*', 'C 大调里 B\u266d 是调外音，标为 \u266d7');
+  ok(deg(6, 0, 'major') === '\u266f4F\u266f*', 'C 大调里 F\u266f 标为 \u266f4（不是 \u266d5）');
+  ok(deg(1, 0, 'major') === '\u266d2D\u266d*', 'C 大调里 D\u266d 标为 \u266d2（不是 \u266f1）');
+  ok(deg(0, 9, 'minor') === '♭3C', 'A 小调里 C 标为 ♭3（与调式表的说法一致）');
+  /* 等距变化音的命名：落在两级的正中间时按惯例选一个（见 music.js 的规则） */
+  ok(deg(1, 0, 'major') === '♭2D♭*', 'C 大调里 pc1 取 ♭2 而不是 ♯1');
+  ok(deg(3, 0, 'major') === '♭3E♭*', 'C 大调里 pc3 取 ♭3 而不是 ♯2');
+  ok(deg(6, 0, 'major') === '♯4F♯*', 'C 大调里 pc6 取 ♯4 而不是 ♭5');
+  ok(deg(8, 0, 'major') === '♭6A♭*', 'C 大调里 pc8 取 ♭6 而不是 ♯5');
+  ok(deg(10, 0, 'major') === '♭7B♭*', 'C 大调里 pc10 取 ♭7 而不是 ♯6');
+  /* 7 与 1 是首尾相接的一对：C 多利亚里的 B 自然音是导音，应写 ♯7 */
+  ok(deg(11, 0, 'dorian') === '7B*', 'C 多利亚里 B 自然音：' + deg(11, 0, 'dorian') + '（相对同主音大调是还原 7 级）');
+  ok(deg(4, 0, 'dorian') === '3E*', 'C 多利亚里 E 自然音标为 3（♭3 还原）');
+  /* 降 E 多利亚里 B 自然音是 ♭6（=C♭），属于调外音 */
+  ok(deg(11, 3, 'dorian', true) === '♭6C♭*', 'E♭ 多利亚里 B 自然音：' + deg(11, 3, 'dorian', true) + '（按降号拼写就是 C♭）');
+  ok(deg(7, 5, 'mixolydian') === '2G', 'F 混合利底亚里 G（pc 7）是 2 级');
+
+  /* ---------- 6. 基频检测（纯函数 + 合成波形） ---------- */
+  function sine(freq, sampleRate, n, amp) {
+    var b = new Float32Array(n);
+    var a = (amp === undefined) ? 0.5 : amp;
+    for (var i = 0; i < n; i++) b[i] = a * Math.sin(2 * Math.PI * freq * i / sampleRate);
+    return b;
+  }
+  /* 带泛音的“吉他感”波形：基频 + 2/3 次谐波（容易误判成倍频的情形） */
+  function guitarish(freq, sampleRate, n) {
+    var b = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      var t = i / sampleRate;
+      b[i] = 0.6 * Math.sin(2 * Math.PI * freq * t)
+           + 0.3 * Math.sin(4 * Math.PI * freq * t)
+           + 0.15 * Math.sin(6 * Math.PI * freq * t);
+    }
+    return b;
+  }
+  var SR = 48000, N = 4096;
+  var targets = [
+    { hz: M.midiToFreq(40), name: '6 弦 E2' },
+    { hz: M.midiToFreq(45), name: '5 弦 A2' },
+    { hz: M.midiToFreq(50), name: '4 弦 D3' },
+    { hz: M.midiToFreq(55), name: '3 弦 G3' },
+    { hz: M.midiToFreq(59), name: '2 弦 B3' },
+    { hz: M.midiToFreq(64), name: '1 弦 E4' },
+    { hz: 440, name: 'A4' },
+    { hz: 587.33, name: 'D5' },
+    { hz: 1318.51, name: 'E6（1 弦 24 品）' }
+  ];
+  var pitchBad = [], pti, pr;
+  for (pti = 0; pti < targets.length; pti++) {
+    pr = Pitch.detectPitch(sine(targets[pti].hz, SR, N), SR);
+    if (!pr) { pitchBad.push(targets[pti].name + ' 没测到'); continue; }
+    if (Math.abs(pr.freq - targets[pti].hz) > 0.5) {
+      pitchBad.push(targets[pti].name + ' 测得 ' + pr.freq.toFixed(2) + '，应为 ' + targets[pti].hz.toFixed(2));
+    }
+  }
+  ok(pitchBad.length === 0, '六根弦的空弦音 + 3 个高音的正弦波都能测准（±0.5Hz）' +
+     (pitchBad.length ? '：' + pitchBad.join(' | ') : ''));
+  var harmBad = [];
+  for (pti = 0; pti < targets.length; pti++) {
+    pr = Pitch.detectPitch(guitarish(targets[pti].hz, SR, N), SR);
+    if (!pr || Math.abs(pr.freq - targets[pti].hz) > 0.6) {
+      harmBad.push(targets[pti].name + ' -> ' + (pr ? pr.freq.toFixed(1) : 'null'));
+    }
+  }
+  ok(harmBad.length === 0, '带 2/3 次谐波的波形不会跑到倍频上（低八度误判）' +
+     (harmBad.length ? '：' + harmBad.join(' | ') : ''));
+  /* 44.1kHz 也要准（手机常见采样率） */
+  var r441 = Pitch.detectPitch(sine(196.0, 44100, 4096), 44100);
+  ok(r441 && Math.abs(r441.freq - 196.0) < 0.5, '44.1kHz 下 G3 测得 ' + (r441 ? r441.freq.toFixed(2) : 'null'));
+  /* 音分精度：A4 高 5 音分要能读出来 */
+  var rd = Pitch.detectPitch(sine(440 * Math.pow(2, 5 / 1200), SR, N), SR);
+  var nd = Pitch.freqToNote(rd.freq, 440);
+  ok(nd.pc === 9 && Math.abs(nd.cents - 5) <= 1, 'A4 偏高 5 音分被读出 ' + nd.cents + ' 音分');
+  /* 静音 / 噪声不能瞎猜 */
+  ok(Pitch.detectPitch(new Float32Array(N), SR) === null, '全静音返回 null');
+  var noise = new Float32Array(N);
+  for (var ni = 0; ni < N; ni++) noise[ni] = (Math.random() * 2 - 1) * 0.002;
+  ok(Pitch.detectPitch(noise, SR) === null, '极低幅度噪声返回 null');
+  /* 基准音 A4 可调 */
+  ok(Pitch.freqToNote(432, 432).cents === 0, '基准 432Hz 时 432Hz 判为准音');
+  ok(Pitch.freqToNote(440, 432).cents > 30, '基准 432Hz 时 440Hz 判偏高 ' + Pitch.freqToNote(440, 432).cents + ' 音分');
+  /* 最近弦识别 */
+  ok(Pitch.nearestString(40).label.indexOf('6 弦') === 0, 'MIDI 40 归属 6 弦 E2');
+  ok(Pitch.nearestString(56).label.indexOf('3 弦') === 0, 'MIDI 56 归属 3 弦 G3');
+  /* 性能：单次检测耗时（手机上要能实时刷新） */
+  var pt0 = +new Date(), ITER = 30;
+  for (pti = 0; pti < ITER; pti++) Pitch.detectPitch(guitarish(196, SR, N), SR);
+  var perCall = (+new Date() - pt0) / ITER;
+  ok(perCall < 40, '单次基频检测耗时 ' + perCall.toFixed(1) + ' ms（台式机；手机上留够余量）');
+
+  /* ---------- 7. 音阶指板渲染 ---------- */
+  var cTones = M.scaleTones(0, 'major', false);
+  var scaleSvg = R.scaleNeck({ maxFret: 24, tones: cTones, scanPc: null, labelMode: 'both', rowH: 36 });
+  ok(scaleSvg.indexOf('<svg') === 0, '音阶指板 SVG 生成成功（' + scaleSvg.length + ' 字节）');
+  function countCls(svg, cls) {
+    var re = new RegExp('class="' + cls + '"', 'g'), c = 0;
+    while (re.exec(svg)) c++;
+    return c;
+  }
+  var dotsAll = countCls(scaleSvg, 'nk-scale-dot') + countCls(scaleSvg, 'nk-scale-root');
+  ok(dotsAll === 90, 'C 大调在 0-24 品的 6 根弦上共 ' + dotsAll + ' 个音位（25 品 × 7/12 × 6 弦）');
+  ok(countCls(scaleSvg, 'nk-scale-name') === dotsAll, '每个音位都带音名标注（' + countCls(scaleSvg, 'nk-scale-name') + ' 个）');
+  ok(scaleSvg.indexOf('>1</text>') > 0 && scaleSvg.indexOf('>7</text>') > 0, '级数标注出现 1 和 7');
+  /* 6 弦空弦 E 在 C 大调是 3 级：x = 46-17 = 29, y = 26 + 5*36 = 206 */
+  ok(scaleSvg.indexOf('<circle class="nk-scale-dot" cx="29" cy="206"') > 0, '6 弦空弦音位坐标正确（29, 206）');
+  ok(scaleSvg.indexOf('x="29" y="209.4" text-anchor="middle" font-size="10.5">3</text>') > 0, '6 弦空弦标注为 3 级');
+  ok(scaleSvg.indexOf('x="29" y="226.5" text-anchor="middle" font-size="8.5">E</text>') > 0, '6 弦空弦音名 E 标在圆点下方');
+  /* 主音 C 用实心点：5 弦 3 品 C，x = 46 + 2.5*42 = 151，y = 26 + 4*36 = 170 */
+  ok(scaleSvg.indexOf('<circle class="nk-scale-root" cx="151" cy="170"') > 0, '主音用实心点（5 弦 3 品 C）');
+  /* 测到 C 时所有 C 音位套高亮圈 */
+  var scanSvg = R.scaleNeck({ maxFret: 24, tones: cTones, scanPc: 0, labelMode: 'degree', rowH: 36 });
+  ok(countCls(scanSvg, 'nk-scan') > 3, '测到 C 时有 ' + countCls(scanSvg, 'nk-scan') + ' 个音位被高亮');
+  ok(countCls(scanSvg, 'nk-scale-name') === 0, '切换成“只级数”后不再输出音名');
+  /* 音阶指板不含和弦指法元素 */
+  ok(countCls(scaleSvg, 'nk-dot') === 0 && countCls(scaleSvg, 'nk-open') === 0, '音阶指板不掺杂和弦指法元素');
+
+  /* ---------- 8. 伴奏：走向 / 节奏型 / 计划生成 ---------- */
+  var B = Backing;
+  function planFor(progId, rhythmId, keyPc, scaleId) {
+    return B.buildPlan(B.progressionById(progId), B.rhythmById(rhythmId), keyPc, scaleId);
+  }
+
+  /* 走向的级数要按主调/调式取音：同一个 I–V–vi–IV 换调整体平移 */
+  function progNames(progId, keyPc, scaleId) {
+    var p = B.progressionById(progId), out = [];
+    for (var i = 0; i < p.items.length; i++) {
+      out.push(B.chordName(B.chordAt(keyPc, scaleId, p.items[i].degree, p.items[i].acc, p.items[i].quality), false));
+    }
+    return out.join(' ');
+  }
+  ok(progNames('pop4', 0, 'major') === 'C G Am F', 'C 大调 I–V–vi–IV → ' + progNames('pop4', 0, 'major'));
+  ok(progNames('pop4', 7, 'major') === 'G D Em C', 'G 大调 I–V–vi–IV → ' + progNames('pop4', 7, 'major'));
+  ok(progNames('pop4', 9, 'minor') === 'Am Em F Dm', 'A 自然小调 I–V–vi–IV → ' + progNames('pop4', 9, 'minor') + '（小调 4 级是 Dm）');
+  ok(progNames('jazz251', 0, 'major') === 'Dm7 G7 Cmaj7 Cmaj7', '爵士 ii–V–I → ' + progNames('jazz251', 0, 'major'));
+  ok(progNames('blues12', 0, 'major').indexOf('C7 C7 C7 C7') === 0, '十二小节布鲁斯开头是四个 C7');
+  /* 小调走向用变音：i–♭VI–♭III–♭VII */
+  ok(progNames('minor_pop', 9, 'minor') === 'Am F C G', 'A 小调 i–♭VI–♭III–♭VII → ' + progNames('minor_pop', 9, 'minor'));
+  /* 歌曲 / 情绪走向：原调和弦必须与图片一致（按当前主调整体移调） */
+  ok(progNames('song_clean', 0, 'major') === 'Am F C G Em',
+     '歌曲走向「清新干净」→ ' + progNames('song_clean', 0, 'major'));
+  ok(progNames('song_retro', 2, 'major') === 'Bm G D A Em',
+     '歌曲走向「复古浪漫」→ ' + progNames('song_retro', 2, 'major'));
+  ok(progNames('song_dream', 0, 'major') === 'Am F C G Dm E',
+     '歌曲走向「追梦挣扎」（E 大三）→ ' + progNames('song_dream', 0, 'major'));
+  ok(progNames('song_easy', 0, 'major') === 'F G C Am G7',
+     '歌曲走向「轻松惬意」（G7）→ ' + progNames('song_easy', 0, 'major'));
+  ok(progNames('song_4536251', 0, 'major') === 'F G Em Am Dm G C',
+     '扩展走向 4536251 → ' + progNames('song_4536251', 0, 'major'));
+  ok(progNames('song_2516', 0, 'major') === 'Dm7 G7 Cmaj7 Am7',
+     '扩展走向 R&B 2516 → ' + progNames('song_2516', 0, 'major'));
+  ok(progNames('song_rock', 0, 'major') === 'C A# F',
+     '扩展走向摇滚 I–♭VII–IV → ' + progNames('song_rock', 0, 'major'));
+
+  /* 计划：拍点、和弦归属、循环次数 */
+  var plan = planFor('pop4', 'arp5321', 0, 'major');
+  ok(plan.totalBeats === 16, 'I–V–vi–IV 每和弦 4 拍 → 共 ' + plan.totalBeats + ' 拍');
+  ok(plan.events.length === 32, '53231323（8 格）走 4 拍 × 4 个和弦 → ' + plan.events.length + ' 个事件');
+  ok(plan.events[0].beat === 0 && plan.events[0].chordIdx === 0 && plan.events[0].ev === 'R',
+     '第一个事件：第 0 拍、第 1 个和弦、弹根音');
+  ok(plan.events[1].beat === 0.5, '八分分解第二个事件在第 0.5 拍（实际 ' + plan.events[1].beat + '）');
+  ok(plan.events[8].chordIdx === 1 && plan.events[8].beat === 4, '第 9 个事件进入第 2 个和弦的第 4 拍');
+  /* 和弦比节奏型长时自动重复，比它短时截断 */
+  var longProg = { id: 'x', zh: 'x', tip: '', items: [{ degree: 1, acc: 0, quality: null, beats: 8 }] };
+  var rep = B.buildPlan(longProg, B.rhythmById('arp5321'), 0, 'major');
+  ok(rep.events.length === 16, '和弦走 8 拍、节奏型 4 拍 → 重复两遍共 ' + rep.events.length + ' 个事件');
+  var shortProg = { id: 'y', zh: 'y', tip: '', items: [{ degree: 1, acc: 0, quality: null, beats: 2 }] };
+  var cut = B.buildPlan(shortProg, B.rhythmById('arp5321'), 0, 'major');
+  ok(cut.events.length === 4 && cut.events[3].beat === 1.5, '和弦只走 2 拍 → 截断为 ' + cut.events.length + ' 个事件（最后一拍 1.5）');
+
+  /* 根音弦：C 在 5 弦、G 在 6 弦、D 在 4 弦、Am 在 5 弦 —— 这就是 R 的意义 */
+  function rootOf(rootPc, qualityId) {
+    var v = B.voicingFor({ rootPc: rootPc, qualityId: qualityId });
+    if (!v) return -1;
+    return B.rootString(v, rootPc);
+  }
+  ok(rootOf(0, 'maj') === 1, 'C 和弦的根音在第 5 弦（索引 1，实际 ' + rootOf(0, 'maj') + '）');
+  ok(rootOf(7, 'maj') === 0, 'G 和弦的根音在第 6 弦（索引 0，实际 ' + rootOf(7, 'maj') + '）');
+  ok(rootOf(2, 'maj') === 2, 'D 和弦的根音在第 4 弦（索引 2，实际 ' + rootOf(2, 'maj') + '）');
+  ok(rootOf(9, 'min') === 1, 'Am 和弦的根音在第 5 弦（实际 ' + rootOf(9, 'min') + '）');
+  ok(rootOf(5, 'maj') === 0 || rootOf(5, 'maj') === 1, 'F 和弦能找到根音弦');
+
+  /* 数据校验：内置走向与节奏型都合法 */
+  var pErr = [], rErr = [];
+  for (var pi = 0; pi < B.PROGRESSIONS.length; pi++) pErr = pErr.concat(B.validateProgression(B.PROGRESSIONS[pi]));
+  for (var ri = 0; ri < B.RHYTHMS.length; ri++) rErr = rErr.concat(B.validateRhythm(B.RHYTHMS[ri]));
+  ok(pErr.length === 0, B.PROGRESSIONS.length + ' 个内置和弦走向都合法' + (pErr.length ? '：' + pErr.join('；') : ''));
+  ok(rErr.length === 0, B.RHYTHMS.length + ' 个内置节奏型都合法' + (rErr.length ? '：' + rErr.join('；') : ''));
+  ok(B.PROGRESSIONS.length >= 60 && B.RHYTHMS.length >= 12,
+     '内置走向 ' + B.PROGRESSIONS.length + ' 个、节奏型 ' + B.RHYTHMS.length + ' 个');
+  /* 节奏型的格子数必须等于 拍数 × 每拍格数 */
+  var arp = B.rhythmById('arp5321');
+  ok(arp.seq.length === arp.beats * arp.perBeat, '53231323：8 格 = 4 拍 × 2');
+  ok(arp.seq[0] === 'R', '53231323 的第一个格子是根音（不是写死的 5 弦）');
+  var bad = { id: 'bad', zh: 'bad', type: 'arp', beats: 4, perBeat: 2, seq: ['R', '9'] };
+  ok(B.validateRhythm(bad).length > 0, '格子数与取值非法的节奏型会被校验拦下');
+  ok(B.validateProgression({ id: 'b', zh: 'b', items: [{ degree: 9, acc: 0, quality: null, beats: 4 }] }).length > 0,
+     '级数越界的走向会被校验拦下');
+
+  /* 扫弦型的取值集合与分解不同 */
+  var strum = B.rhythmById('strum_folk');
+  ok(B.slots(strum).indexOf('D') >= 0 && B.slots(strum).indexOf('R') < 0, '扫弦型的格子取值是 下/上/切音/休止');
+  ok(B.slots(arp).indexOf('R') >= 0 && B.slots(arp).indexOf('D') < 0, '分解型的格子取值含根音、不含下扫');
+
+  /* 两个引擎拍点对齐：Transport 启动时会把所有引擎对齐到同一时刻 */
+  var firstAt = {};
+  function fakeEngine(id, barLen) {
+    return { nextTime: null, enabled: function () { return true; },
+             barSeconds: function () { return barLen; },
+             scheduleBar: function (ctx, out, t) { if (firstAt[id] === undefined) firstAt[id] = t; } };
+  }
+  var e1 = fakeEngine('drums', 1), e2 = fakeEngine('backing', 0.75);
+  Transport.register(e1); Transport.register(e2);
+  var started = Transport.start(120);
+  ok(started === true, 'Transport 能启动');
+  ok(firstAt.drums !== undefined && firstAt.drums === firstAt.backing,
+     '两个引擎的第一小节从同一时刻开始（鼓机 ' + firstAt.drums + ' / 伴奏 ' + firstAt.backing + '）');
+  Transport.stop();
+  ok(e1.nextTime === null && e2.nextTime === null, '停止后引擎的排期时间被清空');
 
   /* ---------- 输出 ---------- */
   lines.push('');

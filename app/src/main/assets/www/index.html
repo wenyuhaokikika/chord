@@ -32,6 +32,18 @@ window.onerror = function (msg, src, line) {
       <h1>和弦助手</h1>
       <p id="subTitle">C 大调 · I 级 · 大三和弦</p>
     </div>
+    <button id="btnTunerOpen" class="ghost-btn" type="button" title="调音 · 音阶" aria-label="调音">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M12 3v10.2M9.4 5.2h5.2M9.4 8.1h5.2M9.4 11h5.2M12 13.2a3.1 3.1 0 003.1-3.1V4.4H8.9v5.7A3.1 3.1 0 0012 13.2zM12 13.2V21"
+          fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <button id="btnAppSettings" class="ghost-btn" type="button" title="设置" aria-label="设置">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M12 8.2a3.8 3.8 0 100 7.6 3.8 3.8 0 000-7.6zm8.2 3.6c0-.6-.1-1.2-.2-1.8l2-1.5-2-3.4-2.4 1a7.7 7.7 0 00-3.1-1.8L14.1 2h-4.2l-.4 2.3c-1.2.4-2.2 1-3.1 1.8l-2.4-1-2 3.4 2 1.5a8 8 0 000 3.6l-2 1.5 2 3.4 2.4-1c.9.8 1.9 1.4 3.1 1.8l.4 2.3h4.2l.4-2.3c1.2-.4 2.2-1 3.1-1.8l2.4 1 2-3.4-2-1.5c.1-.6.2-1.2.2-1.8z"
+          fill="currentColor"/>
+      </svg>
+    </button>
     <button id="btnSpell" class="ghost-btn" type="button" title="切换升降号拼写">&#9839;</button>
   </div>
   <div class="chord-headline">
@@ -43,66 +55,524 @@ window.onerror = function (msg, src, line) {
   </div>
 </header>
 
-<!-- ================= 指板视图（吸顶，首屏可见） ================= -->
-<section class="neck-section" id="neckSection">
-  <div class="neck-toolbar">
-    <button class="round-btn" id="btnSettings" type="button" title="查询条件" aria-label="查询条件">
-      <!-- 用内联 SVG 而不是 ⚙ 字符：老系统字体里没有这个字形，会显示成方框 -->
-      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-        <circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="2.2"/>
-        <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
-        <path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.2 2.2M16.3 16.3l2.2 2.2M18.5 5.5l-2.2 2.2M7.7 16.3l-2.2 2.2"
-              stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-      </svg>
-    </button>
-    <button class="round-btn" id="btnPrev" type="button" title="上一个指法">&#9664;</button>
-    <div class="neck-title">
-      <strong id="voicingLabel">开放把位</strong>
-    </div>
-    <button class="round-btn" id="btnNext" type="button" title="下一个指法">&#9654;</button>
-    <button class="round-btn" id="btnPlay" type="button" title="试听" aria-label="试听">
-      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-        <path d="M4 9.4h3.3L12 5.4v13.2L7.3 14.6H4z" fill="currentColor"/>
-        <path d="M15.4 9.2a4.3 4.3 0 010 5.6M17.9 6.7a7.7 7.7 0 010 10.6"
-              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-    </button>
-  </div>
-  <div class="neck-scroll" id="neckScroll">
-    <div id="neckBox"></div>
-  </div>
-  <div class="neck-info" id="neckInfo"></div>
-</section>
+<!-- ================= 页签 ================= -->
+<nav class="tabs" id="tabs">
+  <button class="tab on" type="button" data-tab="chord">和弦查询</button>
+  <button class="tab" type="button" data-tab="band">伴奏</button>
+  <button class="tab" type="button" data-tab="improv">即兴</button>
+  <button class="tab" type="button" data-tab="works">作品</button>
+</nav>
 
-<!-- ================= 结果 ================= -->
-<main class="results">
-  <div class="results-head">
-    <strong>全部指法</strong>
-    <span id="resultCount">0 个</span>
+<!-- ================= 视图一：和弦 ================= -->
+<div class="view" id="viewChord">
+  <section class="neck-section" id="neckSection">
+    <div class="neck-toolbar">
+      <button class="round-btn" id="btnSettings" type="button" title="查询条件" aria-label="查询条件">
+        <!-- 用内联 SVG 而不是 ⚙ 字符：老系统字体里没有这个字形，会显示成方框 -->
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="2.2"/>
+          <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+          <path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.2 2.2M16.3 16.3l2.2 2.2M18.5 5.5l-2.2 2.2M7.7 16.3l-2.2 2.2"
+                stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button class="round-btn" id="btnPrev" type="button" title="上一个指法">&#9664;</button>
+      <div class="neck-title">
+        <strong id="voicingLabel">开放把位</strong>
+      </div>
+      <button class="round-btn" id="btnNext" type="button" title="下一个指法">&#9654;</button>
+      <button class="round-btn" id="btnPlay" type="button" title="试听" aria-label="试听">
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <path d="M4 9.4h3.3L12 5.4v13.2L7.3 14.6H4z" fill="currentColor"/>
+          <path d="M15.4 9.2a4.3 4.3 0 010 5.6M17.9 6.7a7.7 7.7 0 010 10.6"
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="neck-scroll" id="neckScroll">
+      <div id="neckBox"></div>
+    </div>
+    <div class="neck-info" id="neckInfo"></div>
+  </section>
+
+  <main class="results">
+    <div class="results-head">
+      <strong>全部指法</strong>
+      <span id="resultCount">0 个</span>
+    </div>
+    <div class="chip-row small" id="rangeChips"></div>
+    <div id="results"></div>
+  </main>
+</div>
+
+<!-- ================= 视图二：调音 · 音阶 ================= -->
+<div class="view" id="viewTuner" hidden>
+  <div class="tuner-dialog-head">
+    <strong>调音 · 音阶</strong>
+    <button class="mini-toggle" id="btnTunerClose" type="button">关闭</button>
   </div>
-  <div class="chip-row small" id="rangeChips"></div>
-  <div id="results"></div>
-</main>
+
+  <section class="tuner-panel">
+    <div class="tuner-readout">
+      <div class="note-big" id="tuneNote">--</div>
+      <div class="tuner-meta">
+        <span class="tuner-freq" id="tuneFreq">-- Hz</span>
+        <span class="tuner-deg" id="tuneDegree">--</span>
+        <span class="tuner-str" id="tuneString">--</span>
+      </div>
+      <button class="chip big accent" id="btnMic" type="button">开始收音</button>
+    </div>
+
+    <div class="cents-wrap">
+      <div class="cents-track"><div class="cents-center"></div></div>
+      <div class="cents-needle" id="centsNeedle"></div>
+      <div class="cents-labels"><span>-50</span><span>0</span><span>+50</span></div>
+      <div class="cents-readout" id="tuneCents">-- 音分</div>
+    </div>
+    <p class="tuner-tip" id="tunerTip">
+      点“开始收音”后把手机靠近吉他（或对着麦克风哼一个音），会实时显示音名、频率、
+      音分偏差，以及它在你所选调式里的级数。
+    </p>
+  </section>
+
+  <section class="neck-section plain">
+    <div class="neck-toolbar">
+      <button class="round-btn" id="btnTunerSettings" type="button" title="选择主调与调式" aria-label="选择主调与调式">
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+          <circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="2.2"/>
+          <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+          <path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.2 2.2M16.3 16.3l2.2 2.2M18.5 5.5l-2.2 2.2M7.7 16.3l-2.2 2.2"
+                stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <div class="neck-title">
+        <strong id="scaleTitle">C 大调</strong>
+      </div>
+      <button class="round-btn wide" id="btnScaleLabel" type="button" title="切换标注内容">级数+音名</button>
+    </div>
+    <div class="neck-scroll" id="scaleScroll">
+      <div id="scaleBox"></div>
+    </div>
+    <div class="neck-info" id="scaleInfo"></div>
+  </section>
+
+  <section class="panel scale-desc">
+    <div class="mode-desc" id="modeDesc"></div>
+    <div class="field">
+      <label>七个音（级数 / 音名 / 相对主音的半音）</label>
+      <div class="tones-row" id="tonesRow"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label-row">
+      <label>七种教会调式（点一下切换）</label>
+      <span class="mini-hint" id="modeHint">同一个调式在不同主调上就是整体平移</span>
+    </div>
+    <div class="mode-table" id="modeTable"></div>
+  </section>
+</div>
+
+<!-- ================= 视图三：伴奏（鼓机 + 和弦伴奏） ================= -->
+<div class="view" id="viewBand" hidden>
+
+  <!-- 总控：速度、谁参与、开始/停止 —— 两个子页签共用，保证「拍子一样」 -->
+  <section class="band-head">
+    <!-- 走向预览：紧跟页头的大字和弦，两个子页签都能看到 -->
+    <div class="preview-block">
+      <div class="label-row">
+        <label>走向预览</label>
+        <span class="mini-hint" id="progHint"></span>
+      </div>
+      <div class="prog-preview" id="progPreview"></div>
+    </div>
+    <div class="drum-head">
+      <div class="drum-title">
+        <strong id="bandTitle">伴奏</strong>
+        <span id="bandStatus">鼓机 基础摇滚 · 伴奏 万能和弦</span>
+      </div>
+      <button class="chip big accent" id="btnBandPlay" type="button">开始</button>
+    </div>
+
+    <div class="drum-tempo">
+      <div class="tempo-big"><span id="bpmValue">100</span><em>BPM</em></div>
+      <input type="range" id="bpmRange" min="40" max="240" step="1" value="100" aria-label="速度 BPM">
+      <div class="tempo-btns">
+        <button class="mini-toggle" id="bpmMinus" type="button">-1</button>
+        <button class="mini-toggle" id="bpmPlus" type="button">+1</button>
+        <button class="mini-toggle" id="btnTap" type="button">TAP 点速</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>谁参与播放（两个都开就一起响，拍点自动对齐）</label>
+      <div class="chip-row small" id="enableChips"></div>
+    </div>
+
+  </section>
+
+  <section class="panel instance-panel" id="instancePanel">
+    <div class="label-row">
+      <label>伴奏实例</label>
+      <span class="mini-hint" id="instCount"></span>
+    </div>
+    <div class="inst-row">
+      <select id="bandInstanceSelect" class="api-input" aria-label="已保存的伴奏实例"></select>
+      <button class="mini-toggle on" id="btnSaveInstance" type="button">保存当前为实例</button>
+      <button class="mini-toggle del-btn" id="btnDeleteInstance" type="button">删除</button>
+    </div>
+    <p class="api-note">一个实例 = 鼓机（含格子改动）+ 和弦走向 + 节奏型 + 调式 / 速度。保存后在「即兴」页选择它。</p>
+  </section>
+
+  <!-- 子页签 -->
+  <nav class="tabs sub" id="bandTabs">
+    <button class="tab on" type="button" data-sub="drums">鼓机</button>
+    <button class="tab" type="button" data-sub="backing">伴奏</button>
+  </nav>
+
+  <!-- 子页签一：鼓机 -->
+  <div id="subDrums">
+    <section class="drum-panel">
+      <div class="drum-head">
+        <div class="drum-title">
+          <strong id="drumName">基础摇滚</strong>
+          <span id="drumMeta">4/4 · 底鼓 1、3 拍，军鼓 2、4 拍</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>摇摆（把反拍八分往后推，布鲁斯/爵士用）</label>
+        <div class="chip-row small" id="swingChips"></div>
+      </div>
+      <div class="field">
+        <label>鼓组音量</label>
+        <div class="drum-vol">
+          <input type="range" id="drumVol" min="0" max="100" step="5" value="80" aria-label="鼓组音量">
+          <span id="drumVolValue">80%</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="neck-section plain">
+      <div class="neck-toolbar">
+        <button class="round-btn" id="btnDrumReset" type="button" title="恢复这个节奏的原样">&#8635;</button>
+        <div class="neck-title">
+          <strong id="drumGridTitle">节奏格子（点格子可自己改）</strong>
+        </div>
+        <button class="round-btn wide" id="btnDrumClear" type="button">清空</button>
+      </div>
+      <div class="step-scroll" id="stepScroll">
+        <div id="stepGrid"></div>
+      </div>
+      <div class="neck-info" id="drumGridInfo">每格 = 十六分音符；蓝点是该鼓件的敲击位置</div>
+    </section>
+
+    <section class="panel">
+      <div class="label-row">
+        <label>常见节奏（点一下切换）</label>
+        <span class="mini-hint">切页签也会继续响，练和弦转换很方便</span>
+      </div>
+      <div class="pattern-table" id="patternTable"></div>
+    </section>
+  </div>
+
+  <!-- 子页签二：和弦伴奏 -->
+  <div id="subBacking" hidden>
+    <section class="panel">
+      <div class="label-row">
+        <label>调式（决定走向里每个级数是什么和弦）</label>
+        <button class="mini-toggle" id="btnBackingKey" type="button">改调式</button>
+      </div>
+      <div class="key-line" id="backingKeyLine">C 大调</div>
+    </section>
+
+    <section class="panel">
+      <div class="label-row">
+        <label>和弦走向（点一下切换）</label>
+        <button class="mini-toggle on" id="btnNewProg" type="button">新建和弦走向</button>
+      </div>
+      <div class="prog-table" id="progTable"></div>
+    </section>
+
+    <section class="panel" id="progEditor" hidden>
+      <div class="label-row">
+        <label id="progEditorTitle">编辑和弦走向</label>
+        <button class="mini-toggle" id="btnAddChord" type="button">+ 加和弦</button>
+      </div>
+      <div class="edit-rows" id="progRows"></div>
+      <div class="edit-actions">
+        <button class="chip on" id="btnProgSave" type="button">保存并启用</button>
+        <button class="chip" id="btnProgCancel" type="button">取消</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="label-row">
+        <label>节奏型（分解 / 扫弦）</label>
+        <button class="mini-toggle on" id="btnNewRhythm" type="button">新建节奏型</button>
+      </div>
+      <div class="rhythm-table" id="rhythmTable"></div>
+    </section>
+
+    <section class="panel" id="rhythmEditor" hidden>
+      <div class="label-row">
+        <label id="rhythmEditorTitle">编辑节奏型</label>
+        <button class="mini-toggle" id="btnRhythmType" type="button">分解</button>
+      </div>
+      <div class="field">
+        <label>几拍</label>
+        <div class="chip-row small" id="reBeats"></div>
+      </div>
+      <div class="field">
+        <label>每一拍几个格子（2 = 八分，4 = 十六分）</label>
+        <div class="chip-row small" id="rePerBeat"></div>
+      </div>
+      <div class="field">
+        <label id="reSeqLabel">每个格子弹什么（点一下循环：根音 → 各弦 → 休止）</label>
+        <div class="edit-seq" id="reSeq"></div>
+      </div>
+      <div class="edit-actions">
+        <button class="chip on" id="btnRhythmSave" type="button">保存并启用</button>
+        <button class="chip" id="btnRhythmCancel" type="button">取消</button>
+      </div>
+    </section>
+
+
+  </div>
+
+</div>
+
+<div class="view" id="viewImprov" hidden>
+
+  <section class="panel improv-hero">
+    <div class="label-row">
+      <label>即兴</label>
+      <span class="mini-hint" id="improvHint">选择一个伴奏实例</span>
+    </div>
+    <div class="solo-mode-row">
+      <div class="mode-banner local" id="modeBanner">当前：本地 solo（未配置 API）</div>
+    </div>
+
+    <div class="field">
+      <label>提示词（可选）</label>
+      <textarea id="improvPrompt" class="api-input prompt-input" rows="3"
+        placeholder="例如：帮我生成一段solo，生成一段凄凉的秋天有个老人扫落叶的场景"></textarea>
+      <div class="mini-hint">填了提示词会先推荐鼓、节奏型、走向和 5 个速度；不填则按当前实例的和弦走向生成。</div>
+    </div>
+
+    <div class="panel rec-panel" id="recPanel" hidden>
+      <div class="label-row">
+        <label>推荐结果</label>
+        <span class="mini-hint" id="recSource"></span>
+      </div>
+      <div class="rec-summary" id="recSummary"></div>
+      <div class="rec-choice-grid">
+        <label>鼓机<select id="recDrumSelect" class="api-input" aria-label="选择鼓机"></select></label>
+        <label>节奏型<select id="recRhythmSelect" class="api-input" aria-label="选择节奏型"></select></label>
+        <label>和弦走向<select id="recProgressionSelect" class="api-input" aria-label="选择和弦走向"></select></label>
+      </div>
+      <div class="rec-bpm-title">速度（可直接输入 40–240 BPM）</div>
+      <div class="rec-speed-row">
+        <input id="recBpmInput" class="api-input rec-bpm-input" type="number" min="40" max="240"
+          step="1" inputmode="numeric" placeholder="输入 BPM" aria-label="速度 BPM">
+        <button class="mini-toggle" id="btnUseRecBpm" type="button">推荐速度 <b id="recBpmBest">--</b> BPM</button>
+      </div>
+      <div class="mini-hint">快捷选择：</div>
+      <div class="chip-row small wrap" id="recBpmRow"></div>
+      <div class="edit-actions rec-actions">
+        <button class="chip on" id="btnRecGenerate" type="button" disabled>用这些选择生成</button>
+      </div>
+      <div class="mini-hint" id="recReason"></div>
+    </div>
+
+    <div class="field">
+      <label>伴奏实例（鼓机 + 和弦走向 + 节奏型）</label>
+      <div class="inst-row">
+        <input id="instanceSearch" class="api-input inst-search" type="search"
+          placeholder="搜索实例：名字 / 走向 / 调式 / 速度…" aria-label="搜索伴奏实例">
+        <select id="instanceSelect" class="api-input" aria-label="伴奏实例"></select>
+        <button class="mini-toggle" id="btnInstNew" type="button">用当前伴奏新建</button>
+        <button class="mini-toggle del-btn" id="btnInstDelete" type="button">删除</button>
+      </div>
+      <div class="mini-hint" id="instanceInfo">还没有实例：先到「伴奏」页配置好鼓机/走向/节奏型，再点“用当前伴奏新建”。</div>
+    </div>
+
+    <div class="select-row">
+      <label>音乐风格<select id="styleSelect" class="api-input" aria-label="音乐风格"></select></label>
+      <label>长度<select id="lengthSelect" class="api-input" aria-label="即兴长度"></select></label>
+      <label>旋律音色<select id="toneSelect" class="api-input" aria-label="旋律音色"></select></label>
+      <button class="mini-toggle tone-preview" id="btnTonePreview" type="button"
+        title="用当前音色弹一小段，听钢弦/尼龙/电吉他/过载/失真/爵士的区别">试听音色</button>
+    </div>
+
+    <div class="field">
+      <label>离调 Bias <b id="biasValue">40</b> / 100（越大越脱离主调）</label>
+      <input type="range" id="biasRange" min="0" max="100" step="5" value="40" aria-label="离调 Bias">
+    </div>
+
+    <div class="field">
+      <label>音域 Bias <b id="rangeBiasValue">0.50</b> / 1（0≈一个八度，1≈两个八度）</label>
+      <input type="range" id="rangeBiasRange" min="0" max="1" step="0.05" value="0.5"
+        aria-label="音域 Bias">
+    </div>
+
+    <div class="mix-row">
+      <label>鼓 <b id="mixDrumsValue">80%</b>
+        <input type="range" id="mixDrums" min="0" max="120" step="5" value="80" aria-label="鼓音量">
+      </label>
+      <label>伴奏 <b id="mixBackingValue">100%</b>
+        <input type="range" id="mixBacking" min="0" max="120" step="5" value="100" aria-label="伴奏音量">
+      </label>
+      <label>solo <b id="mixSoloValue">120%</b>
+        <input type="range" id="mixSolo" min="0" max="220" step="10" value="120" aria-label="solo 音量">
+      </label>
+    </div>
+
+    <div class="edit-actions wrap-actions improv-main-actions">
+      <button class="chip on" id="btnImprovGen" type="button">生成</button>
+      <button class="chip" id="btnSaveScore" type="button" disabled>保存</button>
+    </div>
+    <div class="improv-msg" id="improvMsg"></div>
+  </section>
+
+  <section class="panel" id="queuePanel">
+    <div class="label-row">
+      <label>任务队列</label>
+      <span class="mini-hint" id="queueInfo">空闲</span>
+    </div>
+    <div class="queue-list" id="queueList"></div>
+    <div class="queue-live" id="queueLive" hidden>
+      <div class="queue-live-head">
+        <strong id="queueLiveTitle">--</strong>
+        <span class="mini-hint" id="queueLiveStatus">--</span>
+      </div>
+      <div class="label-row">
+        <label>思考过程（流式）</label>
+        <span class="mini-hint" id="queueStreamHint"></span>
+      </div>
+      <pre class="queue-stream" id="queueStream"></pre>
+      <div class="agent-log" id="agentLog" hidden></div>
+      <div class="edit-actions">
+        <button class="mini-toggle" id="btnQueueClear" type="button">清空已完成</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="scorePanel">
+    <div class="label-row">
+      <label>简谱</label>
+      <span class="mini-hint" id="scoreMeta">还没有内容</span>
+    </div>
+    <div class="score-wait" id="scoreWaiting" hidden>任务运行中，完成后会在这里显示新的简谱…</div>
+    <div class="now-note" id="nowNote">停止 · 播放时这里会显示当前音与小节</div>
+    <div class="mini-hint score-legend">每两格一拍，浅/深底色交替；数字上方的点 = 高八度，下方的点 = 低八度；— = 延音（连音）。</div>
+    <div class="score-scroll" id="scoreScroll">
+      <div class="score-view" id="scoreView"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="guitarPanel">
+    <div class="label-row">
+      <label>双吉他</label>
+      <span class="mini-hint" id="guitarHint">左边旋律 · 右边节奏和弦</span>
+    </div>
+    <div class="dual-neck">
+      <div class="neck-card">
+        <div class="neck-card-head">
+          <span>旋律吉他</span>
+          <span class="mini-hint" id="melodyShape">--</span>
+        </div>
+        <div class="mini-neck" id="melodyNeck"></div>
+        <label class="neck-select">指型
+          <select id="shapeSelect" class="api-input" aria-label="旋律吉他指型"></select>
+        </label>
+        <div class="shape-warn" id="shapeWarn" hidden></div>
+        <div class="used-notes" id="melodyUsed">用到的音：--</div>
+      </div>
+      <div class="neck-card">
+        <div class="neck-card-head">
+          <span>节奏吉他</span>
+          <span class="mini-hint" id="rhythmChord">--</span>
+        </div>
+        <div class="mini-neck" id="rhythmNeck"></div>
+        <label class="neck-select">把位
+          <select id="registerSelect" class="api-input" aria-label="节奏吉他把位">
+            <option value="low">低把位</option>
+            <option value="mid">中把位</option>
+            <option value="high">高把位</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <details class="advanced improv-tools">
+    <summary>工具（图片识别 / 配和弦 / 六线谱）</summary>
+    <div class="tool-body">
+      <div class="edit-actions wrap-actions">
+        <button class="chip" id="btnPickImage" type="button">上传简谱图片识别</button>
+        <input type="file" id="scoreImage" accept="image/*" hidden>
+        <button class="chip" id="btnSuggestChords" type="button" disabled>根据简谱配和弦</button>
+        <button class="chip" id="btnScoreToTab" type="button" disabled>生成六线谱</button>
+      </div>
+      <div class="chord-suggest" id="chordSuggest" hidden></div>
+      <details class="advanced" id="textImportPanel">
+        <summary>文本导入简谱（没有多模态模型时用这个）</summary>
+        <textarea id="scoreText" class="api-input" rows="7" spellcheck="false"
+          placeholder="title=我的谱&#10;key=C&#10;mode=major&#10;bpm=100&#10;C | 5 3 2 3 1 3 2 3&#10;G | 6 5 3 2 1 2 3 -"></textarea>
+        <div class="edit-actions">
+          <button class="chip" id="btnTextImport" type="button">导入</button>
+        </div>
+      </details>
+      <pre class="tab-pre" id="tabPreview" hidden></pre>
+    </div>
+  </details>
+</div>
+
+<!-- ================= 视图：我的作品 ================= -->
+<div class="view" id="viewWorks" hidden>
+  <section class="panel works-panel">
+    <div class="label-row">
+      <label>我的作品</label>
+      <span class="mini-hint" id="libCount"></span>
+    </div>
+    <div class="chip-row small" id="libTabs">
+      <button class="chip sm on" type="button" data-lib="craft">作品库</button>
+      <button class="chip sm" type="button" data-lib="jianpu">简谱库</button>
+      <button class="chip sm" type="button" data-lib="tablature">六线谱库</button>
+    </div>
+    <div class="lib-box" id="craftLib"></div>
+    <div class="lib-box" id="jianpuLib" hidden></div>
+    <div class="lib-box" id="tabLib" hidden></div>
+  </section>
+</div>
 
 <footer class="app-footer">
-  <p>和弦助手 · 本地离线运行，无需联网。标准调弦 EADGBE。</p>
+  <p>和弦助手 · 和弦 / 调音 / 伴奏 / 作品库完全离线；只有「即兴」生成和「作品」会话修改配置并使用 AI 接口时才会联网。标准调弦 EADGBE。（调音需要麦克风权限）</p>
   <details class="advanced">
     <summary>使用说明</summary>
     <ol class="help">
-      <li>点顶部 <b>&#9881;</b> 打开查询条件：先选<b>主调</b>，再选<b>级数</b>（可加升降号），最后选<b>和弦属性</b>。</li>
+      <li><b>和弦查询</b>：点顶部 <b>&#9881;</b> 打开条件面板，先选<b>主调</b>、再选<b>级数</b>（可加升降号），最后选<b>和弦属性</b>。</li>
       <li>“调内和弦”一排是当前调的自然和弦，点一下直接查询。</li>
       <li>指板默认 24 品，可在条件面板里调整；点任意指法卡片可以在指板上高亮该指法。</li>
       <li><b>&#9664; / &#9654;</b> 在全部指法之间切换，<b>&#9834;</b> 试听当前指法（扫弦）。</li>
+      <li><b>调音 · 音阶</b>：点右上角、设置左边的调音按钮，以 dialog 打开；先选主调与调式（点 <b>&#9881;</b>），再点“开始收音”；右上角「关闭」退出并释放麦克风。</li>
+      <li><b>伴奏</b>：上面选速度（也可以 TAP 点速），下面两个子页签——<b>鼓机</b>（节奏 + 自己点格子）和<b>伴奏</b>（调式、63 条和弦走向、节奏型；可搜情绪/标签/和弦）。两个都启用就会一起响，拍点自动对齐。</li>
+      <li><b>伴奏实例</b>：在伴奏页把「鼓机（含格子改动）+ 和弦走向 + 节奏型 + 调式/速度」保存成实例；即兴页可以输入名字/走向/调式搜索，再选择作为素材。</li>
+      <li><b>即兴（顶部独立页签）</b>：可以填一个场景提示词（例如“凄凉的秋天，一个老人扫落叶”）。填了会先让推荐 agent 给出鼓、节奏型、和弦走向、1 个推荐速度和 Top5 备选；速度可以点选或直接输入，改完点 <b>用这些选择生成</b> 才生成；不填就按当前伴奏实例生成。页面主操作只有 <b>生成</b> 和 <b>保存</b>。风格 7 种、音色 6 种、长度 1–3 loop、离调 Bias、音域 Bias、三路音量；播放时双指板显示音名和当前音。</li>
+      <li><b>设置</b>：点右上角齿轮，填写厂商 / 模型 / API Key，并选择浅色、深色或跟随系统主题。Key 只保存在本机。</li>
+      <li><b>作品</b>：即兴右边的顶部页签。一个作品（craft）包含提示词、推荐、你选的速度、伴奏实例（鼓/节奏型/走向）、简谱和后续修改会话；点作品进入独立详情页，左上角 <b>← 返回作品库</b>。旧简谱库和六线谱库也在「作品」里。</li>
+      <li><b>作品详情</b>：显示提示词、推荐与选择、和弦图/节奏预览、双吉他指板、三声部音量、分页版本表格和简谱；底部可以继续对话，例如“第二小节轻一点”，修改结果、版本和会话都会写回 SQLite。</li>
       <li>谱记法：x = 闷弦，0 = 空弦，数字 = 品位；圆点里的数字是建议指法（1=食指 … 4=小指）。</li>
+      <li>AI 接口：点右上角「设置」，在弹窗里选厂商、填模型与自己的 Key，点「测试连接」。Key 只保存在本机；DeepSeek 聊天模型不支持图片识别，图片请用多模态模型或文本导入。</li>
     </ol>
   </details>
 </footer>
 
-<!-- ================= 查询条件面板（底部抽屉） ================= -->
+<!-- ================= 条件面板（底部抽屉） ================= -->
 <div class="backdrop" id="backdrop"></div>
 <div class="sheet" id="sheet">
   <div class="sheet-head">
-    <strong>查询条件</strong>
+    <strong id="sheetTitle">查询条件</strong>
     <button class="mini-toggle on" id="sheetDone" type="button">完成</button>
   </div>
   <div class="sheet-body">
@@ -113,9 +583,8 @@ window.onerror = function (msg, src, line) {
     </div>
 
     <div class="field">
-      <label>音阶 / 级数（级数决定和弦根音）</label>
+      <label>音阶 / 调式（决定级数对应的音，也决定调音时的级数标注）</label>
       <div class="chip-row small" id="scaleChips"></div>
-      <div class="chip-row" id="degreeChips"></div>
       <div class="seg" id="accChips">
         <button type="button" data-acc="-1">&#9837; 降</button>
         <button type="button" data-acc="0" class="on">&#9838; 本音</button>
@@ -123,7 +592,12 @@ window.onerror = function (msg, src, line) {
       </div>
     </div>
 
-    <div class="field">
+    <div class="field" id="degreeField">
+      <label>级数（和弦根音 = 主调音阶的第几级）</label>
+      <div class="chip-row" id="degreeChips"></div>
+    </div>
+
+    <div class="field" id="diatonicField">
       <div class="label-row">
         <label>调内和弦（点一下直接查）</label>
         <button class="mini-toggle" id="btnDiatonic7" type="button">七和弦</button>
@@ -131,7 +605,7 @@ window.onerror = function (msg, src, line) {
       <div class="chip-row wrap" id="diatonicRow"></div>
     </div>
 
-    <div class="field">
+    <div class="field" id="qualityField">
       <label>和弦属性</label>
       <div id="qualityGroups"></div>
     </div>
@@ -158,6 +632,10 @@ window.onerror = function (msg, src, line) {
         <label>和弦图标注</label>
         <div class="chip-row small" id="labelChips"></div>
       </div>
+      <div class="field">
+        <label>调音基准音 A4（一般用 440）</label>
+        <div class="chip-row small" id="a4Chips"></div>
+      </div>
       <div class="switch-list">
         <label class="switch"><input type="checkbox" id="chkBassRoot" checked><span>低音必须是根音（关闭可看转位）</span></label>
         <label class="switch"><input type="checkbox" id="chkInnerMute"><span>允许发声弦中间有闷弦</span></label>
@@ -168,10 +646,209 @@ window.onerror = function (msg, src, line) {
   </div>
 </div>
 
+<!-- ================= 页面：作品详情 ================= -->
+<div class="view" id="viewCraft" hidden>
+  <div class="craft-topbar">
+    <button class="mini-toggle craft-back-btn" id="btnCraftBack" type="button">← 返回作品库</button>
+    <span class="craft-topbar-title">作品详情</span>
+  </div>
+  <section class="panel craft-hero">
+    <div class="label-row">
+      <span class="mini-hint" id="craftMeta"></span>
+    </div>
+    <h2 class="craft-title" id="craftTitle">作品</h2>
+    <div class="craft-prompt" id="craftPrompt"></div>
+    <div class="edit-actions">
+      <button class="chip on" id="btnCraftPlay" type="button">播放作品</button>
+      <button class="chip" id="btnCraftStop" type="button">停止</button>
+    </div>
+    <div class="mix-row craft-mix">
+      <label>鼓 <b id="craftMixDrumsValue">80%</b>
+        <input type="range" id="craftMixDrums" min="0" max="120" step="5" value="80" aria-label="作品鼓音量">
+      </label>
+      <label>伴奏 <b id="craftMixBackingValue">100%</b>
+        <input type="range" id="craftMixBacking" min="0" max="120" step="5" value="100" aria-label="作品伴奏音量">
+      </label>
+      <label>solo <b id="craftMixSoloValue">120%</b>
+        <input type="range" id="craftMixSolo" min="0" max="220" step="10" value="120" aria-label="作品 solo 音量">
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label-row">
+      <label>伴奏预览</label>
+      <span class="mini-hint" id="craftBandMeta"></span>
+    </div>
+    <div class="craft-band-preview" id="craftBandPreview"></div>
+  </section>
+
+  <section class="panel">
+    <div class="label-row">
+      <label>双吉他</label>
+      <span class="mini-hint" id="craftGuitarHint">左边旋律 · 右边节奏和弦</span>
+    </div>
+    <div class="dual-neck">
+      <div class="neck-card">
+        <div class="neck-card-head">
+          <span>旋律吉他</span>
+          <span class="mini-hint" id="craftMelodyShape">--</span>
+        </div>
+        <div class="mini-neck" id="craftMelodyNeck"></div>
+        <label class="neck-select">指型
+          <select id="craftShapeSelect" class="api-input" aria-label="作品旋律指型"></select>
+        </label>
+        <div class="shape-warn" id="craftShapeWarn" hidden></div>
+        <div class="used-notes" id="craftMelodyUsed">用到的音：--</div>
+      </div>
+      <div class="neck-card">
+        <div class="neck-card-head">
+          <span>节奏吉他</span>
+          <span class="mini-hint" id="craftRhythmChord">--</span>
+        </div>
+        <div class="mini-neck" id="craftRhythmNeck"></div>
+        <label class="neck-select">把位
+          <select id="craftRegisterSelect" class="api-input" aria-label="作品节奏吉他把位">
+            <option value="low">低把位</option>
+            <option value="mid">中把位</option>
+            <option value="high">高把位</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label-row">
+      <label>推荐与选择</label>
+      <span class="mini-hint" id="craftRecSource"></span>
+    </div>
+    <div class="rec-summary" id="craftRec"></div>
+  </section>
+
+  <section class="panel">
+    <div class="label-row">
+      <label>版本记录</label>
+      <span class="mini-hint" id="craftVersionHint"></span>
+    </div>
+    <div class="craft-versions" id="craftVersions"></div>
+  </section>
+
+  <section class="panel">
+    <div class="label-row craft-score-head">
+      <label id="craftScoreLabel">简谱</label>
+      <span class="mini-hint" id="craftScoreMeta"></span>
+    </div>
+    <div class="mini-hint score-legend">每两格一拍，浅/深底色交替；数字上方的点 = 高八度，下方的点 = 低八度；— = 延音（连音）。</div>
+    <div class="score-scroll">
+      <div class="score-view" id="craftScore"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="label-row">
+      <label>继续修改</label>
+      <span class="mini-hint">对话和每次结果都会保存在这个作品里</span>
+    </div>
+    <div class="craft-messages" id="craftMessages"></div>
+    <textarea id="craftChatInput" class="api-input prompt-input" rows="3"
+      placeholder="例如：第二小节太密了，帮我留一点呼吸；结尾落回主音"></textarea>
+    <div class="edit-actions">
+      <button class="chip on" id="btnCraftSend" type="button">发送修改</button>
+    </div>
+    <div class="improv-msg" id="craftChatMsg"></div>
+  </section>
+</div>
+
+<!-- ================= 弹窗：设置 / 实例名称 ================= -->
+<div class="dialog-backdrop" id="apiDialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="apiDialogTitle">
+    <div class="dialog-head">
+      <strong id="apiDialogTitle">设置</strong>
+      <button class="mini-toggle" id="apiDialogClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="dialog-body">
+      <div class="api-grid">
+        <label>厂商<select id="llmVendor" class="api-input" aria-label="厂商"></select></label>
+        <label>Base URL<input id="llmBase" class="api-input" type="text" placeholder="https://api.deepseek.com" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label>模型<input id="llmModel" class="api-input" type="text" placeholder="deepseek-chat" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label>API Key<input id="llmKey" class="api-input" type="password" placeholder="sk-…" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      </div>
+      <div class="edit-actions">
+        <button class="chip" id="btnLlmTest" type="button">测试连接</button>
+        <button class="chip on" id="btnLlmSave" type="button">保存并关闭</button>
+      </div>
+      <div class="mini-hint" id="apiState">未配置</div>
+      <div class="api-section">
+        <label>外观主题
+          <select id="themeSelect" class="api-input" aria-label="外观主题">
+            <option value="auto">跟随系统</option>
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
+          </select>
+        </label>
+      </div>
+      <p class="api-note" id="llmHint">
+        只写在本机（安卓 SQLite / 浏览器 localStorage）。地址请用 https。
+        图片识别需要多模态模型（DeepSeek 聊天模型不支持图片，请用文本导入）。
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="dialog-backdrop" id="instDialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <div class="dialog-head">
+      <strong>保存伴奏实例</strong>
+      <button class="mini-toggle" id="instDialogClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="dialog-body">
+      <label class="dialog-label">名称
+        <input id="instName" class="api-input" type="text" maxlength="40" placeholder="例如：我的 12 小节布鲁斯">
+      </label>
+      <p class="api-note">实例会保存当前鼓机格子、和弦走向、节奏型、调式与速度；之后在「即兴」页选择它。</p>
+      <div class="edit-actions">
+        <button class="chip on" id="btnInstSave" type="button">保存</button>
+        <button class="chip" id="btnInstCancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="js/music.js"></script>
 <script src="js/chord.js"></script>
 <script src="js/render.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/pitch.js"></script>
+<script src="js/tuner.js"></script>
+<script src="js/patterns.js"></script>
+<script src="js/transport.js"></script>
+<script src="js/voices.js"></script>
+<script src="js/drums.js"></script>
+<script src="js/backing.js"></script>
+<script src="js/store.js"></script>
+<script src="js/pager.js"></script>
+<script src="js/llm.js"></script>
+<script src="js/agentqueue.js"></script>
+<script src="js/band.js"></script>
+<script src="js/drumsui.js"></script>
+<script src="js/bandui.js"></script>
+<script src="js/backingui.js"></script>
+<script src="js/instances.js"></script>
+<script src="js/crafts.js"></script>
+<script src="js/improv.js"></script>
+<script src="js/improvui.js"></script>
+<script src="js/craftui.js"></script>
 <script src="js/app.js"></script>
+<!-- ================= 迷你播放条（播放鼓机时出现） ================= -->
+<div class="mini-player" id="miniPlayer" hidden>
+  <span class="mp-dot" id="mpDot"></span>
+  <span class="mp-chord" id="mpChord">--</span>
+  <span class="mp-solo" id="mpSolo" hidden>SOLO</span>
+  <span class="mp-text" id="mpText">伴奏 · 100 BPM</span>
+  <button class="mini-toggle" id="mpOpen" type="button">打开伴奏</button>
+  <button class="mini-toggle on" id="mpStop" type="button">停止</button>
+</div>
+
 </body>
 </html>

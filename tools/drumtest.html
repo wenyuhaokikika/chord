@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>鼓机 + 伴奏测试</title>
+<style>body{font:13px monospace;margin:0;padding:8px}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script src="../app/src/main/assets/www/js/music.js"></script>
+<script src="../app/src/main/assets/www/js/chord.js"></script>
+<script src="../app/src/main/assets/www/js/render.js"></script>
+<script src="../app/src/main/assets/www/js/patterns.js"></script>
+<script src="../app/src/main/assets/www/js/transport.js"></script>
+<script src="../app/src/main/assets/www/js/audio.js"></script>
+<script src="../app/src/main/assets/www/js/drums.js"></script>
+<script src="../app/src/main/assets/www/js/backing.js"></script>
+<script src="../app/src/main/assets/www/js/band.js"></script>
+<script>
+/*
+ * 鼓机与伴奏测试：用 OfflineAudioContext 把节奏渲染成一段真实音频，再从波形里找「敲击时刻」，
+ * 逐条核对是不是该响的时候响、不该响的时候不响。这比只测数据结构可信得多。
+ *
+ * 由 tools/run_audio_test.py 驱动（结果用 sendBeacon 回传，因为无头浏览器
+ * --dump-dom 会在异步测试跑完前就 dump）。
+ */
+(function () {
+  var lines = [], fails = 0;
+  var SEP = '  |  ';
+  function ok(cond, msg) { lines.push((cond ? 'PASS  ' : 'FAIL  ') + msg); if (!cond) fails++; }
+  function info(msg) { lines.push('      ' + msg); }
+
+  var qs = (location.search || '').replace(/^\?/, '').split('&');
+  var PORT = 0;
+  for (var qi = 0; qi < qs.length; qi++) {
+    var kv = qs[qi].split('=');
+    if (kv[0] === 'port') PORT = Number(kv[1]);
+  }
+  function report(text) {
+    document.getElementById('out').textContent = text;
+    if (PORT && navigator.sendBeacon) {
+      try { navigator.sendBeacon('http://127.0.0.1:' + PORT + '/result', text); } catch (e) {}
+    }
+  }
+  window.setTimeout(function () {
+    var p = document.getElementById('out');
+    if (p && p.textContent === 'running...') p.textContent = 'SCRIPT_DID_NOT_START (主脚本未执行，可能是语法错误)';
+  }, 2000);
+
+  /* ---------- 从波形里找敲击时刻 ----------
+     做法：4ms 窗的 RMS 包络 -> 正向差分（只取变大）-> 自适应阈值。
+     自适应是关键：底鼓的起音比军鼓、闭镲强得多，用「全局峰值 × 固定比例」当阈值
+     会把弱一点的军鼓漏掉；改成和「附近一小段的变化率均值」比，强弱起音都能抓到。
+     另外在包络最前面补一个 0，这样正好落在 t=0 的那一下也能被检出来。
+     最后加不应期，避免同一个音被算成两下。 */
+  function onsets(samples, sampleRate, opts) {
+    opts = opts || {};
+    var win = Math.max(2, Math.floor(sampleRate * (opts.window || 0.004)));
+    var hop = Math.max(1, Math.floor(sampleRate * (opts.hop || 0.002)));
+    var minGap = (opts.minGap === undefined) ? 0.03 : opts.minGap;
+    var ratio = (opts.attack === undefined) ? 2.2 : opts.attack;
+    var floor = (opts.threshold === undefined) ? 0.0012 : opts.threshold;
+
+    var env = [0];                       /* 前导 0：让 t=0 的起音有一个可比的前值 */
+    for (var i = 0; i + win < samples.length; i += hop) {
+      var sum = 0;
+      for (var j = 0; j < win; j++) sum += samples[i + j] * samples[i + j];
+      env.push(Math.sqrt(sum / win));
+    }
+    var peak = 0;
+    for (i = 0; i < samples.length; i++) if (Math.abs(samples[i]) > peak) peak = Math.abs(samples[i]);
+
+    /* 包络先做 5 帧（10ms）滑动平均再做差分：
+       4ms 的窗口盖不住低音弦的半个周期，包络会随波形相位抖动，
+       不平滑的话这些抖动会被当成起音。 */
+    var sm = [];
+    for (i = 0; i < env.length; i++) {
+      var sa = Math.max(0, i - 2), sb = Math.min(env.length, i + 3), ss = 0;
+      for (var sk = sa; sk < sb; sk++) ss += env[sk];
+      sm.push(ss / (sb - sa));
+    }
+    var d = [];
+    for (i = 1; i < sm.length; i++) d.push(Math.max(0, sm[i] - sm[i - 1]));
+    if (!d.length) return { list: [], peak: peak };
+
+    var halfWin = Math.max(2, Math.round(0.05 * sampleRate / hop));   /* 局部窗口 ±50ms */
+    var list = [], last = -1e9;
+    for (i = 0; i < d.length; i++) {
+      if (d[i] < floor) continue;
+      var a = Math.max(0, i - halfWin), b = Math.min(d.length, i + halfWin + 1);
+      var sum2 = 0;
+      for (var k = a; k < b; k++) sum2 += d[k];
+      var localMean = sum2 / (b - a);
+      if (d[i] < Math.max(floor, localMean * ratio)) continue;
+      if (i + 1 < d.length && d[i] < d[i + 1]) continue;              /* 取上升段末尾 */
+      var t = (i + 1) * hop / sampleRate;
+      if (t - last < minGap) continue;
+      list.push(t);
+      last = t;
+    }
+    return { list: list, peak: peak };
+  }
+
+  /* 某时刻附近 4ms 的 RMS */
+  function rmsAt(samples, sampleRate, t) {
+    var a = Math.max(0, Math.floor((t - 0.002) * sampleRate));
+    var b = Math.min(samples.length, Math.floor((t + 0.002) * sampleRate));
+    var s = 0, n = 0;
+    for (var i = a; i < b; i++) { s += samples[i] * samples[i]; n++; }
+    return n ? Math.sqrt(s / n) : 0;
+  }
+  /* 判断 t 这一刻是否有「起音」：相对前 30ms 有明显跃升。
+     直接看包络比跑通用起音检测更稳——多音同时响时会有拍频起伏，
+     通用检测器容易把起伏也当起音，而这里的判据只认「明显的抬升」。 */
+  function hasAttack(samples, sampleRate, t, factor) {
+    var before = rmsAt(samples, sampleRate, Math.max(0, t - 0.03));
+    var after = rmsAt(samples, sampleRate, t + 0.006);
+    return after > Math.max(0.012, before * (factor || 1.6));
+  }
+
+  function near(list, t, tol) {
+    for (var i = 0; i < list.length; i++) if (Math.abs(list[i] - t) <= tol) return list[i];
+    return null;
+  }
+
+  /* ---------- 断言 ---------- */
+  function testStepMath() {
+    var p = Patterns.byId('rock');                 /* 4/4，16 格，4 拍 */
+    var step = Drums.stepSeconds(p, 120);
+    var bar = Drums.barSeconds(p, 120);
+    ok(Math.abs(step - 0.125) < 1e-6, '120BPM 四四拍：十六分格 = ' + step.toFixed(4) + 's（应为 0.125）');
+    ok(Math.abs(bar - 2) < 1e-6, '120BPM 一小节 = ' + bar.toFixed(3) + 's（应为 2）');
+    var w = Patterns.byId('waltz');                /* 3/4，12 格，3 拍 */
+    ok(Math.abs(Drums.barSeconds(w, 120) - 1.5) < 1e-6, '120BPM 三拍子一小节 = ' + Drums.barSeconds(w, 120).toFixed(3) + 's（应为 1.5）');
+    var b68 = Patterns.byId('blues68');            /* 6/8，12 格，6 拍（按八分算） */
+    ok(Math.abs(Drums.stepSeconds(b68, 100) - 0.3) < 1e-6, '100BPM 六八拍每格 = ' + Drums.stepSeconds(b68, 100).toFixed(4) + 's（一小节 6 拍八分 3.6s、12 格 -> 0.3）');
+    /* 摇摆：0.5 不推，0.667 把反拍八分推后 1/3 格 */
+    ok(Drums.swingOffsetSteps(p, 2, 0.5) === 0, 'swing=0.5（直）时反拍不推后');
+    ok(Math.abs(Drums.swingOffsetSteps(p, 2, 0.667) - 0.3333) < 0.001,
+       'swing=0.667 时反拍推后 ' + Drums.swingOffsetSteps(p, 2, 0.667).toFixed(3) + ' 格（应为 1/3）');
+    ok(Drums.swingOffsetSteps(p, 1, 0.667) === 0, '摇摆只影响反拍八分，正拍与十六分不动');
+  }
+
+  function testPatternData() {
+    var errs = [];
+    for (var i = 0; i < Patterns.LIST.length; i++) {
+      errs = errs.concat(Patterns.validate(Patterns.LIST[i]));
+    }
+    ok(errs.length === 0, Patterns.LIST.length + ' 个节奏的数据全部合法（格子不越界、不重复）' + (errs.length ? '：' + errs.join('；') : ''));
+    ok(Patterns.LIST.length >= 12, '节奏数量 ' + Patterns.LIST.length + ' 个');
+    var ids = {};
+    var dup = [];
+    for (i = 0; i < Patterns.LIST.length; i++) {
+      if (ids[Patterns.LIST[i].id]) dup.push(Patterns.LIST[i].id);
+      ids[Patterns.LIST[i].id] = 1;
+    }
+    ok(dup.length === 0, '节奏 id 无重复');
+    /* 每个节奏至少要有敲击（不然是空谱） */
+    var empty = [];
+    for (i = 0; i < Patterns.LIST.length; i++) {
+      var p = Patterns.LIST[i], n = 0;
+      for (var inst in p.hits) if (p.hits.hasOwnProperty(inst)) n += p.hits[inst].length;
+      if (n < 4) empty.push(p.id + '(' + n + ')');
+    }
+    ok(empty.length === 0, '每个节奏都有足够的敲击' + (empty.length ? '：' + empty.join(',') : ''));
+    /* 拷贝是深拷贝，改副本不影响预设 */
+    var c = Patterns.clone(Patterns.byId('rock'));
+    c.hits.kick.push(4);
+    ok(Patterns.byId('rock').hits.kick.indexOf(4) < 0, 'clone 是深拷贝，改副本不会污染内置节奏');
+  }
+
+  function testTapTempo() {
+    Band.tapReset();
+    ok(Band.tap(1000) === null, '第一次点 TAP 不产生速度');
+    Band.tap(1500);
+    var bpm = Band.tap(2000);
+    ok(bpm === 120, '每 500ms 点一次 → ' + bpm + ' BPM（应为 120）');
+    Band.tapReset();
+    Band.tap(1000); Band.tap(1400); var b2 = Band.tap(1800);
+    ok(b2 === 150, '每 400ms 点一次 → ' + b2 + ' BPM（应为 150）');
+    Band.tapReset();
+    Band.tap(1000); Band.tap(4000); var b3 = Band.tap(4500);
+    ok(b3 === 120, '间隔超过 2.5 秒会重新开始（' + b3 + ' BPM）');
+  }
+
+  var asyncs = [];
+
+  function testRenderBasicRock() {
+    var p = Patterns.byId('rock');                 /* kick 1、3 拍；snare 2、4 拍；hat 八分 */
+    return Drums.renderOffline(p, { bpm: 120, swing: 0.5, sampleRate: 22050 }, 4).then(function (samples) {
+      var r = onsets(samples, 22050, { minGap: 0.06 });
+      info('渲染 4 秒（120BPM 两小节），检出 ' + r.list.length + ' 个敲击，峰值 ' + r.peak.toFixed(2));
+      var tol = 0.03;
+      var kickMiss = [], snareMiss = [];
+      for (var b = 0; b < 2; b++) {
+        [0, 1].forEach(function (beat) {
+          var t = b * 2 + beat * 1;                 /* 底鼓在 1、3 拍 */
+          if (!near(r.list, t, tol)) kickMiss.push(t.toFixed(2));
+          var t2 = b * 2 + beat * 1 + 0.5;           /* 军鼓在 2、4 拍 */
+          if (!near(r.list, t2, tol)) snareMiss.push(t2.toFixed(2));
+        });
+      }
+      ok(kickMiss.length === 0, '底鼓出现在 0/1/2/3 秒' + (kickMiss.length ? '，缺：' + kickMiss.join(',') : ''));
+      ok(snareMiss.length === 0, '军鼓出现在 0.5/1.5/2.5/3.5 秒' + (snareMiss.length ? '，缺：' + snareMiss.join(',') : ''));
+      ok(r.peak > 0.1 && r.peak <= 1.35, '有实际音量且不严重削波（峰值 ' + r.peak.toFixed(2) + '）');
+    });
+  }
+
+  function testRenderClickAndTempo() {
+    var click = Patterns.byId('click41');
+    return Drums.renderOffline(click, { bpm: 60, swing: 0.5, sampleRate: 22050 }, 4.2).then(function (s) {
+      var r = onsets(s, 22050, { minGap: 0.2 });
+      info('60BPM 节拍器 4.2 秒，检出 ' + r.list.length + ' 个拍点：' + r.list.map(function (t) { return t.toFixed(2); }).join(', '));
+      var miss = [];
+      for (var t = 0; t < 4; t++) if (!near(r.list, t, 0.05)) miss.push(t);
+      ok(miss.length === 0, '60BPM 时每 1 秒一个拍点' + (miss.length ? '，缺：' + miss.join(',') : ''));
+    });
+  }
+
+  function testRenderSwing() {
+    var p = Patterns.clone(Patterns.byId('blues'));
+    /* 只留闭镲，方便看清反拍位置：正拍 0，反拍 2（带摇摆会推后 1/3 格） */
+    var straight = Patterns.clone(p); straight.hits = { hat: [0, 2] }; straight.accents = {}; straight.swing = 0.5;
+    var swung = Patterns.clone(p); swung.hits = { hat: [0, 2] }; swung.accents = {}; swung.swing = 0.667;
+    return Drums.renderOffline(straight, { bpm: 120, swing: 0.5, sampleRate: 22050 }, 1).then(function (s1) {
+      return Drums.renderOffline(swung, { bpm: 120, swing: 0.667, sampleRate: 22050 }, 1).then(function (s2) {
+        var o1 = onsets(s1, 22050, { minGap: 0.03 }).list;
+        var o2 = onsets(s2, 22050, { minGap: 0.03 }).list;
+        info('直拍反拍位置 ' + o1.map(function (t) { return t.toFixed(3); }).join(', ') +
+             ' / 摇摆反拍位置 ' + o2.map(function (t) { return t.toFixed(3); }).join(', '));
+        var need = 0.125 / 3;                     /* 120BPM 一格 0.125s，推后 1/3 格 */
+        ok(o1.length >= 2 && o2.length >= 2, '两个版本都检出了正拍与反拍');
+        var d = o2[1] - o1[1];
+        ok(d > 0.02 && Math.abs(d - need) < 0.02, '摇摆把反拍推后约 ' + d.toFixed(3) + 's（应为 ' + need.toFixed(3) + 's）');
+        ok(Math.abs(o1[0] - o2[0]) < 0.01, '正拍位置不受摇摆影响');
+      });
+    });
+  }
+
+  function testAllPatternsRender() {
+    var ps = Patterns.LIST;
+    var idx = 0, bad = [];
+    function next() {
+      if (idx >= ps.length) return Promise.resolve();
+      var p = ps[idx++];
+      return Drums.renderOffline(p, { bpm: p.bpm, sampleRate: 22050 }, Drums.barSeconds(p, p.bpm) + 0.2)
+        .then(function (s) {
+          var o = onsets(s, 22050, { minGap: 0.02 });
+          if (!o.list.length) bad.push(p.id + ': 无声音');
+          else if (o.peak > 1.4) bad.push(p.id + ': 削波 ' + o.peak.toFixed(2));
+          return next();
+        });
+    }
+    return next().then(function () {
+      ok(bad.length === 0, ps.length + ' 个节奏都能渲染出声音且不严重削波' + (bad.length ? '：' + bad.join('；') : ''));
+    });
+  }
+
+  /* 静音检测：空节奏不该有声音 */
+  function testEmptySilent() {
+    var p = Patterns.clone(Patterns.byId('rock'));
+    p.hits = {}; p.accents = {};
+    return Drums.renderOffline(p, { bpm: 120, sampleRate: 22050 }, 1).then(function (s) {
+      var peak = 0;
+      for (var i = 0; i < s.length; i++) if (Math.abs(s[i]) > peak) peak = Math.abs(s[i]);
+      ok(peak < 0.001, '把格子全清空后渲染出来是静音（峰值 ' + peak.toFixed(4) + '）');
+    });
+  }
+
+  /* ---------- 伴奏：走向 + 节奏型 ---------- */
+  function rmsIn(samples, sampleRate, t0, t1) {
+    var a = Math.floor(t0 * sampleRate), b = Math.min(samples.length, Math.floor(t1 * sampleRate));
+    var s = 0, n = 0;
+    for (var i = a; i < b; i++) { s += samples[i] * samples[i]; n++; }
+    return n ? Math.sqrt(s / n) : 0;
+  }
+
+  function testBackingArpTiming() {
+    /* 四分分解（根音 / 3弦 / 2弦 / 1弦）走两个和弦：C（1 级）→ F（4 级），各 4 拍 */
+    var prog = { id: 't', zh: 't', tip: '',
+                 items: [{ degree: 1, acc: 0, quality: null, beats: 4 },
+                         { degree: 4, acc: 0, quality: null, beats: 4 }] };
+    var rhy = Backing.rhythmById('arp_quart');
+    return Backing.renderOffline(prog, rhy, 0, 'major', { bpm: 120, sampleRate: 22050 }, 4.4)
+      .then(function (samples) {
+        var miss = [], extra = [];
+        for (var k = 0; k < 8; k++) {
+          var t = k * 0.5;                        /* 120BPM 一拍 0.5 秒，一拍一个音 */
+          if (!hasAttack(samples, 22050, t)) miss.push(t.toFixed(2));
+          if (k < 7 && hasAttack(samples, 22050, t + 0.25, 2.5)) extra.push((t + 0.25).toFixed(2));
+        }
+        var peak = 0;
+        for (var z = 0; z < samples.length; z++) if (Math.abs(samples[z]) > peak) peak = Math.abs(samples[z]);
+        info('四分分解：峰值 ' + peak.toFixed(2) + '，第 1 拍 RMS=' + rmsAt(samples, 22050, 0.01).toFixed(3) +
+             '，第 1 拍前 30ms RMS=' + rmsAt(samples, 22050, -0.03).toFixed(3));
+        ok(miss.length === 0, '伴奏在每个拍点上都有明显起音（缺 ' + miss.join(',') + '）');
+        ok(extra.length === 0, '拍与拍之间（半拍处）没有多余的声音（多余 ' + extra.join(',') + '）');
+        ok(peak > 0.05 && peak <= 1.4, '伴奏有实际音量且不严重削波（峰值 ' + peak.toFixed(2) + '）');
+      });
+  }
+
+  function testBackingStrumAndMute() {
+    /* 同一小节：全下扫 vs 全切音 —— 切音必须明显更短、更轻 */
+    var strumDown = Backing.rhythmById('strum_quart');
+    var muted = { id: 'x', zh: 'x', type: 'strum', beats: 4, perBeat: 1, seq: ['X', '-', '-', '-'], tip: '' };
+    var one = { id: 'o', zh: 'o', tip: '', items: [{ degree: 1, acc: 0, quality: null, beats: 4 }] };
+    var oneHit = { id: 'd', zh: 'd', type: 'strum', beats: 4, perBeat: 1, seq: ['D', '-', '-', '-'], tip: '' };
+    return Backing.renderOffline(one, oneHit, 0, 'major', { bpm: 120, sampleRate: 22050 }, 1.2)
+      .then(function (sDown) {
+        return Backing.renderOffline(one, muted, 0, 'major', { bpm: 120, sampleRate: 22050 }, 1.2)
+          .then(function (sMute) {
+            var dTail = rmsIn(sDown, 22050, 0.4, 1.0);
+            var mTail = rmsIn(sMute, 22050, 0.4, 1.0);
+            info('下扫尾音 RMS=' + dTail.toFixed(4) + '，切音尾音 RMS=' + mTail.toFixed(4));
+            ok(dTail > 0.002, '下扫的余音能持续（' + dTail.toFixed(4) + '）');
+            ok(mTail < dTail * 0.3, '切音（X）明显更短更轻（' + mTail.toFixed(4) + ' < ' + dTail.toFixed(4) + '×0.3）');
+            return Backing.renderOffline(one, strumDown, 0, 'major', { bpm: 120, sampleRate: 22050 }, 4.4)
+              .then(function (s4) {
+                var miss = [];
+                for (var k = 0; k < 4; k++) if (!hasAttack(s4, 22050, k * 0.5)) miss.push((k * 0.5).toFixed(2));
+                ok(miss.length === 0, '四分扫弦四拍都有起音（缺 ' + miss.join(',') + '）');
+                /* 扫弦是从低音弦扫到高音弦：第一拍前几毫秒先出低音，再逐步出高音 */
+                var low = rmsAt(s4, 22050, 0.002), mid = rmsAt(s4, 22050, 0.02);
+                info('扫弦起始 RMS：2ms=' + low.toFixed(3) + ' 20ms=' + mid.toFixed(3));
+                ok(mid > 0, '扫弦有声音');
+              });
+          });
+      });
+  }
+
+  function testBackingEngineVolume() {
+    var one = { id: 'o', zh: 'o', tip: '', items: [{ degree: 1, acc: 0, quality: null, beats: 4 }] };
+    var oneHit = { id: 'd', zh: 'd', type: 'strum', beats: 4, perBeat: 1, seq: ['D', '-', '-', '-'], tip: '' };
+    function render(vol) {
+      var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      var c = new OAC(1, 22050, 22050);
+      var out = c.createGain();
+      out.connect(c.destination);
+      Backing.configure(one, oneHit, 0, 'major');
+      Backing.setEnabled(true);
+      Backing.setVolume(vol);
+      Backing._engine.scheduleBar(c, out, 0, 120);
+      return c.startRendering().then(function (buf) { return buf.getChannelData(0); });
+    }
+    return render(0.75).then(function (loud) {
+      return render(0).then(function (silent) {
+        var l = rmsIn(loud, 22050, 0.05, 1.0);
+        var z = rmsIn(silent, 22050, 0.05, 1.0);
+        info('实时伴奏引擎音量：75% RMS=' + l.toFixed(4) + '，0% RMS=' + z.toFixed(4));
+        ok(l > 0.002, '伴奏引擎在 75% 音量时有实际输出');
+        ok(z < l * 0.05, '把伴奏音量拉到 0 后引擎输出降到静音');
+      });
+    });
+  }
+
+  function testBackingRootAndKey() {
+    /* 换主调：同一个走向的低音（根音）应该跟着移到新的主音上 */
+    var prog = { id: 't', zh: 't', tip: '', items: [{ degree: 1, acc: 0, quality: null, beats: 4 }] };
+    var rhy = Backing.rhythmById('arp_quart');   /* 第一个音是根音 */
+    function firstOnsetMidi(keyPc, scaleId) {
+      var plan = Backing.buildPlan(prog, rhy, keyPc, scaleId);
+      var v = Backing.voicingFor(plan.events[0].chord);
+      if (!v) return -1;
+      var s = Backing.rootString(v, plan.events[0].chord.rootPc);
+      if (s < 0) return -1;
+      return Chord.midiAt(s, v.frets[s]);
+    }
+    var cMidi = firstOnsetMidi(0, 'major');      /* C 和弦：5 弦 3 品 = C3 */
+    var gMidi = firstOnsetMidi(7, 'major');      /* G 和弦：6 弦 3 品 = G2 */
+    var aMidi = firstOnsetMidi(9, 'major');      /* A 和弦：5 弦 0 品 = A2 */
+    info('根音音高：C=' + cMidi + ' G=' + gMidi + ' A=' + aMidi);
+    ok(Music.mod12(cMidi) === 0 && Music.mod12(gMidi) === 7 && Music.mod12(aMidi) === 9,
+       '三个主调下第一个音（根音）分别是 C / G / A');
+    ok(gMidi === 43, 'G 和弦的根音弹在 6 弦 3 品（MIDI 43，实际 ' + gMidi + '）');
+    ok(cMidi === 48, 'C 和弦的根音弹在 5 弦 3 品（MIDI 48，实际 ' + cMidi + '）');
+  }
+
+  function testGuitarTones() {
+    var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    var sr = 16000, tones = ['acoustic', 'classical', 'electric', 'drive', 'distortion', 'jazz'];
+    var rows = {}, chain = Promise.resolve();
+
+    function renderTone(tone) {
+      var c = new OAC(1, Math.floor(sr * 1.4), sr);
+      var out = Audio_.masterChain(c, 1);
+      var notes = [60, 64, 67];
+      for (var i = 0; i < notes.length; i++) {
+        Audio_.pluck(c, out, 0.02 + i * 0.2, notes[i], 0.8, 0.72, { tone: tone });
+      }
+      return c.startRendering().then(function (buf) {
+        var d = buf.getChannelData(0), peak = 0, sum = 0, diff = 0, tail = 0, tn = 0;
+        for (var i = 0; i < d.length; i++) {
+          var v = d[i];
+          if (Math.abs(v) > peak) peak = Math.abs(v);
+          sum += v * v;
+          if (i) { var dd = v - d[i - 1]; diff += dd * dd; }
+          if (i > sr * 0.75) { tail += v * v; tn++; }
+        }
+        var rms = Math.sqrt(sum / d.length);
+        rows[tone] = {
+          peak: peak, rms: rms,
+          bright: Math.sqrt(diff / d.length) / Math.max(0.00001, rms),
+          tail: Math.sqrt(tail / Math.max(1, tn))
+        };
+      });
+    }
+
+    tones.forEach(function (tone) {
+      chain = chain.then(function () { return renderTone(tone); });
+    });
+    return chain.then(function () {
+      var silent = [], hot = [], sig = [];
+      for (var i = 0; i < tones.length; i++) {
+        var m = rows[tones[i]];
+        info('音色 ' + tones[i] + '：峰值 ' + m.peak.toFixed(3) + '，RMS ' + m.rms.toFixed(3) +
+          '，亮度 ' + m.bright.toFixed(2) + '，尾音 ' + m.tail.toFixed(3));
+        if (m.peak < 0.01 || m.rms < 0.001) silent.push(tones[i]);
+        if (m.peak > 1.01) hot.push(tones[i]);
+        sig.push(m.peak.toFixed(2) + '/' + m.rms.toFixed(3) + '/' + m.bright.toFixed(2));
+      }
+      var same = 0;
+      for (i = 0; i < sig.length; i++) for (var j = i + 1; j < sig.length; j++) if (sig[i] === sig[j]) same++;
+      ok(silent.length === 0, '六种吉他音色都能出声' + (silent.length ? '：静音 ' + silent.join(',') : ''));
+      ok(hot.length === 0, '六种吉他音色都不削波' + (hot.length ? '：过载 ' + hot.join(',') : ''));
+      ok(same === 0, '六种音色的包络/亮度有可测差别（雷同 ' + same + ' 对）');
+      ok(rows.distortion.bright > rows.jazz.bright,
+        '失真比爵士更亮（' + rows.distortion.bright.toFixed(2) + ' > ' + rows.jazz.bright.toFixed(2) + '）');
+      ok(rows.distortion.tail > rows.classical.tail,
+        '失真尾音比尼龙长（' + rows.distortion.tail.toFixed(3) + ' > ' + rows.classical.tail.toFixed(3) + '）');
+    });
+  }
+
+  function run() {
+    return Promise.resolve().then(function () {
+      testStepMath();
+      testPatternData();
+      testTapTempo();
+      return testRenderBasicRock();
+    }).then(testRenderClickAndTempo)
+      .then(testRenderSwing)
+      .then(testAllPatternsRender)
+      .then(testEmptySilent)
+      .then(testGuitarTones)
+      .then(testBackingArpTiming)
+      .then(testBackingStrumAndMute)
+      .then(testBackingEngineVolume)
+      .then(testBackingRootAndKey);
+  }
+
+  run().then(function () {
+    lines.push('');
+    lines.push(fails === 0 ? 'DRUM_TESTS_PASSED' : ('DRUM_TESTS_FAILED: ' + fails));
+    report(lines.join('\n'));
+  })['catch'](function (e) {
+    fails++;
+    lines.push('EXCEPTION: ' + (e && e.message) + '\n' + ((e && e.stack) || ''));
+    lines.push('');
+    lines.push('DRUM_TESTS_FAILED: ' + fails);
+    report(lines.join('\n'));
+  });
+})();
+</script>
+</body>
+</html>

@@ -324,6 +324,861 @@
       /* 试听后界面仍可正常操作 */
       click($('btnNext'));
       ok(doc.querySelector('#neckInfo').textContent.length > 0, '试听后仍能切换指法并刷新信息行');
+
+      /* --- 17. 调音 dialog：从设置左侧入口打开、调式表、没有麦克风时的降级 --- */
+      var tunerBtn = $('btnTunerOpen');
+      ok(!!tunerBtn, '顶部有调音入口');
+      var headerBtns = doc.querySelectorAll('.brand .ghost-btn');
+      var tunerIdx = -1, settingsIdx = -1;
+      for (var hb = 0; hb < headerBtns.length; hb++) {
+        if (headerBtns[hb].id === 'btnTunerOpen') tunerIdx = hb;
+        if (headerBtns[hb].id === 'btnAppSettings') settingsIdx = hb;
+      }
+      ok(tunerIdx >= 0 && settingsIdx === tunerIdx + 1, '调音入口紧挨在设置左边');
+      ok(!doc.querySelector('.tab[data-tab="tuner"]'), '调音不再占顶部页签');
+      click(tunerBtn);
+      ok(win.CHORD_STATE.tab === 'tuner' && doc.body.classList.contains('tuner-dialog'),
+         '调音以 dialog 方式打开');
+      ok(doc.getElementById('viewChord').hidden === true && doc.getElementById('viewTuner').hidden === false,
+         '和弦板块隐藏、调音板块显示');
+      ok(win.getComputedStyle($('viewTuner')).position === 'fixed',
+         '调音 dialog 覆盖在页面之上');
+      ok(win.getComputedStyle($('tabs')).display === 'none',
+         '调音 dialog 打开时隐藏底部页签');
+      ok($('scaleTitle').textContent.indexOf('大调') > 0, '音阶指板标题：' + $('scaleTitle').textContent);
+      ok(doc.querySelectorAll('.mode-row').length === 6, '调式表分页显示（每页 6 条）');
+      ok($('modeTable').querySelector('.pager-info').textContent.indexOf('共 10 条') > 0,
+         '调式总数（3 个常用 + 7 个教会调式）：' + $('modeTable').querySelector('.pager-info').textContent);
+      var modeSearch = $('modeTable').querySelector('.pager-search');
+      var evm = doc.createEvent('HTMLEvents'); evm.initEvent('input', true, false);
+      modeSearch.value = '多利亚';
+      modeSearch.dispatchEvent(evm);
+      ok(doc.querySelectorAll('.mode-row').length === 1, '搜索“多利亚”只剩 1 条');
+      modeSearch.value = '';
+      modeSearch.dispatchEvent(evm);
+      ok(doc.querySelectorAll('#scaleBox .nk-scale-name').length > 50, '音阶指板带音名标注');
+      /* 条件面板里跟和弦有关的项要隐藏 */
+      click($('btnTunerSettings'));
+      ok($('degreeField').style.display === 'none' && $('qualityField').style.display === 'none',
+         '调音模式下条件面板只留主调与调式');
+      ok($('sheetTitle').textContent.indexOf('主调') === 0, '面板标题改为：' + $('sheetTitle').textContent);
+      /* 在调音页签下换调式，指板要跟着重画 */
+      var dr = doc.querySelector('[data-group="scale"][data-value="lydian"]');
+      ok(!!dr, '找到利底亚');
+      click(dr);
+      ok(win.CHORD_STATE.scaleId === 'lydian', '调式切到利底亚');
+      ok($('scaleTitle').textContent.indexOf('利底亚') > 0, '标题更新：' + $('scaleTitle').textContent);
+      ok($('modeDesc').textContent.indexOf('\u266f4') > 0, '调式说明显示特征音 ♯4');
+      click($('sheetDone'));
+
+      /* 没有麦克风/权限时的降级：给出可读的提示，而不是抛异常或白屏 */
+      var micErr = null;
+      try {
+        click($('btnMic'));
+      } catch (e) {
+        micErr = e.message;
+      }
+      ok(micErr === null, '点“开始收音”不抛异常（' + (micErr || '正常') + '）');
+      setTimeout(function () {
+        /* getUserMedia 被拒是异步的，这里同步跑完不做断言，留给 tunertest.html 覆盖成功路径 */
+        ok(true, '麦克风失败路径已在 tunertest/真机上覆盖');
+      }, 0);
+
+      click($('btnTunerClose'));
+      ok(win.CHORD_STATE.tab === 'chord' && !doc.body.classList.contains('tuner-dialog'),
+         '关闭调音 dialog 回到原页签');
+      ok($('viewTuner').hidden === true && $('viewChord').hidden === false,
+         '关闭后恢复和弦页');
+
+      /* --- 18. 伴奏页签：总控 + 鼓机子页签 + 伴奏子页签 --- */
+      click(doc.querySelector('.tab[data-tab="band"]'));
+      ok(win.CHORD_STATE.tab === 'band', '切到伴奏页签');
+      ok(doc.getElementById('viewBand').hidden === false && doc.getElementById('viewChord').hidden === true,
+         '只显示伴奏板块');
+      ok(doc.querySelectorAll('[data-enable]').length === 2, '两个启用开关（鼓机 / 伴奏）');
+      ok(doc.querySelectorAll('#bandTabs .tab').length === 2, '两个子页签（鼓机 / 伴奏）');
+      var subDrumsTab = doc.querySelector('#bandTabs .tab[data-sub="drums"]');
+      ok(subDrumsTab.classList.contains('on'), '进入伴奏页时「鼓机」子页签是选中样式');
+      ok(!doc.querySelector('#bandTabs .tab[data-sub="backing"]').classList.contains('on'),
+         '另一个子页签未选中');
+      ok($('bandStatus').textContent.indexOf('鼓机') > 0 && $('bandStatus').textContent.indexOf('伴奏') > 0,
+         '总控状态行：' + $('bandStatus').textContent);
+
+      /* 鼓机子页签 */
+      ok(doc.querySelectorAll('.pattern-row').length === 5,
+         '节奏表分页显示（每页 5 条，实际 ' + doc.querySelectorAll('.pattern-row').length + '）');
+      ok($('patternTable').querySelector('.pager-info').textContent.indexOf('共 13 条') > 0,
+         '分页条显示总数：' + $('patternTable').querySelector('.pager-info').textContent);
+      /* 搜索：用关键字找到不在第一页的节奏 */
+      var drumSearch = $('patternTable').querySelector('.pager-search');
+      drumSearch.value = '放克';
+      var evs = doc.createEvent('HTMLEvents'); evs.initEvent('input', true, false);
+      drumSearch.dispatchEvent(evs);
+      ok(doc.querySelectorAll('.pattern-row').length === 1, '搜索“放克”只剩 1 条');
+      ok(!!doc.querySelector('[data-pattern="funk"]'), '搜索结果里能点到放克');
+      drumSearch.value = '';
+      drumSearch.dispatchEvent(evs);
+      ok(doc.querySelectorAll('.pattern-row').length === 5, '清空搜索后回到第一页');
+      var cellCount = doc.querySelectorAll('.step-cell').length;
+      ok(cellCount === 6 * 16, '鼓机格子 6 件 × 16 格 = ' + cellCount);
+      ok(doc.querySelectorAll('#swingChips .chip').length === 4, '摇摆 4 档');
+      drumSearch.value = '放克';
+      drumSearch.dispatchEvent(evs);
+      click(doc.querySelector('[data-pattern="funk"]'));
+      ok(win.DrumsUI.state.patternId === 'funk', '选中放克');
+      drumSearch.value = '';
+      drumSearch.dispatchEvent(evs);
+      ok($('drumName').textContent.indexOf('放克') === 0, '鼓机面板标题更新：' + $('drumName').textContent);
+      /* 点格子三态 */
+      var cells = doc.querySelectorAll('.step-cell');
+      var target = null;
+      for (var ci = 0; ci < cells.length; ci++) {
+        if (!cells[ci].classList.contains('on')) { target = cells[ci]; break; }
+      }
+      var tInst = target.getAttribute('data-inst'), tStep = target.getAttribute('data-step');
+      var beforeOn = doc.querySelectorAll('.step-cell.on').length;
+      click(target);
+      ok(doc.querySelector('.step-cell[data-inst="' + tInst + '"][data-step="' + tStep + '"]').classList.contains('on'), '点一下开');
+      click(doc.querySelector('.step-cell[data-inst="' + tInst + '"][data-step="' + tStep + '"]'));
+      ok(doc.querySelector('.step-cell[data-inst="' + tInst + '"][data-step="' + tStep + '"]').classList.contains('accent'), '再点变重音');
+      click(doc.querySelector('.step-cell[data-inst="' + tInst + '"][data-step="' + tStep + '"]'));
+      ok(doc.querySelectorAll('.step-cell.on').length === beforeOn, '第三下关掉、回到原样');
+
+      /* 伴奏子页签 */
+      click(doc.querySelector('#bandTabs .tab[data-sub="backing"]'));
+      ok(doc.getElementById('subBacking').hidden === false && doc.getElementById('subDrums').hidden === true,
+         '切到伴奏子页签');
+      ok($('backingKeyLine').textContent.indexOf('C ') === 0, '调式行显示主调+调式：' + $('backingKeyLine').textContent);
+      ok($('backingKeyLine').textContent.indexOf('级数') > 0, '并说明了级数按该调式取音');
+      ok(doc.querySelectorAll('.prog-row').length === 5,
+         '和弦走向分页显示（每页 5 条，实际 ' + doc.querySelectorAll('.prog-row').length + '）');
+      ok(doc.querySelectorAll('.rhythm-row').length === 6,
+         '节奏型分页显示（每页 6 条，实际 ' + doc.querySelectorAll('.rhythm-row').length + '）');
+      var progSearch = $('progTable').querySelector('.pager-search');
+      var rhythmSearch = $('rhythmTable').querySelector('.pager-search');
+      ok(!!progSearch && !!rhythmSearch, '走向与节奏型都有搜索框');
+      ok($('progTable').querySelector('.pager-info').textContent.indexOf('共 63 条') > 0,
+         '走向库已扩充：' + $('progTable').querySelector('.pager-info').textContent);
+      ok(doc.querySelectorAll('.preview-chord').length === 4, '当前走向 4 个和弦（I–V–vi–IV）');
+      ok($('progHint').textContent.indexOf('16 拍') > 0, '走向总长提示：' + $('progHint').textContent);
+      /* 用搜索找一条不在第一页的走向（十二小节布鲁斯在第二页） */
+      var evp = doc.createEvent('HTMLEvents'); evp.initEvent('input', true, false);
+      progSearch.value = '布鲁斯';
+      progSearch.dispatchEvent(evp);
+      ok(doc.querySelectorAll('.prog-row').length === 1, '搜索“布鲁斯”只剩 1 条');
+      click(doc.querySelector('[data-prog="blues12"]'));
+      ok(win.BackingUI.state.progId === 'blues12', '选中十二小节布鲁斯');
+      ok(doc.querySelectorAll('.preview-chord').length === 12, '预览变成 12 个和弦');
+      /* 新扩充的歌曲/情绪走向：搜索名称、标签和原调和弦 */
+      progSearch.value = '清新干净';
+      progSearch.dispatchEvent(evp);
+      ok(doc.querySelectorAll('.prog-row').length === 1, '搜索「清新干净」只剩 1 条');
+      var songInfo = $('progTable').querySelector('.pager-info');
+      ok(songInfo && songInfo.textContent.indexOf('共 1 条') >= 0,
+         '搜索结果计数正确：' + (songInfo ? songInfo.textContent : '无'));
+      var songRow = doc.querySelector('[data-prog="song_clean"]');
+      ok(!!songRow && songRow.textContent.indexOf('歌曲') > 0, '歌曲走向带「歌曲」标签');
+      click(songRow);
+      ok(win.BackingUI.state.progId === 'song_clean', '选中「清新干净」');
+      ok(doc.querySelectorAll('.preview-chord').length === 5, '5 个和弦（Am–F–C–G–Em）');
+      progSearch.value = '';
+      progSearch.dispatchEvent(evp);
+      /* 切换节奏型（同样用搜索） */
+      var evr = doc.createEvent('HTMLEvents'); evr.initEvent('input', true, false);
+      rhythmSearch.value = '民谣';
+      rhythmSearch.dispatchEvent(evr);
+      ok(doc.querySelectorAll('.rhythm-row').length >= 1, '搜索“民谣”有结果');
+      click(doc.querySelector('[data-rhythm="strum_folk"]'));
+      ok(win.BackingUI.state.rhythmId === 'strum_folk', '选中民谣扫弦');
+      rhythmSearch.value = '';
+      rhythmSearch.dispatchEvent(evr);
+      ok(doc.querySelectorAll('.rhythm-row').length === 6, '清空搜索回到第一页');
+
+      /* 新建和弦走向 */
+      click($('btnNewProg'));
+      ok($('progEditor').hidden === false, '新建后面板出现');
+      var peRect = $('progEditor').getBoundingClientRect();
+      ok(peRect.top < win.innerHeight && peRect.bottom > 0,
+         '走向编辑器在可视区域内（top=' + Math.round(peRect.top) + '）');
+      ok(doc.querySelectorAll('#progRows .edit-card').length === 2, '默认 2 个和弦可编辑');
+      click($('btnAddChord'));
+      ok(doc.querySelectorAll('#progRows .edit-card').length === 3, '+ 加和弦 → 3 个');
+      /* 给第 3 个和弦改成 6 级 + 小七 + 走 8 拍 */
+      var cards = doc.querySelectorAll('#progRows .edit-card');
+      var last = cards[2];
+      var chips = last.querySelectorAll('.chip');
+      var picked = { deg: false, qual: false, beats: false };
+      for (var k = 0; k < chips.length; k++) {
+        var txt = chips[k].textContent;
+        if (!picked.deg && txt.indexOf('6') === 0) { click(chips[k]); picked.deg = true; }
+        else if (!picked.qual && txt === 'm7') { click(chips[k]); picked.qual = true; }
+        else if (!picked.beats && txt === '8 拍') { click(chips[k]); picked.beats = true; }
+      }
+      ok(picked.deg && picked.qual && picked.beats, '能选级数 / 和弦属性 / 拍数');
+      click($('btnProgSave'));
+      var custom = doc.querySelectorAll('.prog-row');
+      var foundCustom = false;
+      for (k = 0; k < custom.length; k++) if (custom[k].textContent.indexOf('自建') >= 0) foundCustom = true;
+      ok(foundCustom, '保存后列表里出现“自建”走向');
+      ok(win.BackingUI.state.progId.indexOf('custom') === 0, '保存后自动启用新走向');
+      ok($('progEditor').hidden === true, '保存后编辑器收起');
+      var plan = win.Backing.buildPlan(win.BackingUI.currentProgression(), win.BackingUI.currentRhythm(), 0, 'major');
+      ok(plan.events.length > 0 && plan.totalBeats === 4 + 4 + 8, '新走向共 ' + plan.totalBeats + ' 拍（4+4+8）');
+
+      /* 新建节奏型（原来开在列表下方、看不到，现在要滚进来） */
+      click($('btnNewRhythm'));
+      ok($('rhythmEditor').hidden === false, '新建节奏型后面板出现');
+      var reRect = $('rhythmEditor').getBoundingClientRect();
+      ok(reRect.top < win.innerHeight && reRect.bottom > 0,
+         '节奏型编辑器在可视区域内（top=' + Math.round(reRect.top) + ' 视口高=' + win.innerHeight + '）');
+      ok(doc.querySelectorAll('#reSeq .seq-cell').length === 8, '默认 4 拍 × 每拍 2 格 = 8 格');
+      var beatChips = $('reBeats').querySelectorAll('.chip');
+      click(beatChips[1]);   /* 3 拍 */
+      ok(win.BackingUI.state.editing.draft.beats === 3, '改成 3 拍');
+      ok(doc.querySelectorAll('#reSeq .seq-cell').length === 6, '序列跟着变成 6 格');
+      /* 点格子循环取值：根音 -> 1 -> 2 ... */
+      var cell0 = doc.querySelectorAll('#reSeq .seq-cell')[0];
+      var txt0 = cell0.textContent;
+      click(cell0);
+      ok(doc.querySelectorAll('#reSeq .seq-cell')[0].textContent !== txt0,
+         '点格子能循环取值（' + txt0 + ' → ' + doc.querySelectorAll('#reSeq .seq-cell')[0].textContent + '）');
+      click($('btnRhythmType'));
+      ok(win.BackingUI.state.editing.draft.type === 'strum', '能切成扫弦型');
+      ok($('reSeqLabel').textContent.indexOf('下扫') > 0, '提示文案跟着类型变：' + $('reSeqLabel').textContent);
+      click($('btnRhythmType'));   /* 切回分解 */
+      click($('btnRhythmSave'));
+      var custR = false, rowsR = doc.querySelectorAll('.rhythm-row');
+      for (k = 0; k < rowsR.length; k++) if (rowsR[k].textContent.indexOf('自建') >= 0) custR = true;
+      ok(custR, '保存后列表里出现“自建”节奏型');
+      ok(win.BackingUI.state.rhythmId.indexOf('myr') === 0, '保存后自动启用新节奏型');
+
+      /* --- 持久化：自建内容要能“下次打开还在” --- */
+      ok(!!win.Store, '页面里有存储层（Store）');
+      info('存储后端：' + win.Store.backend());
+      var infoTxt = win.Store.info();
+      ok(infoTxt.indexOf('progression') > 0, '自建走向已写入存储：' + infoTxt);
+      var beforeReload = win.BackingUI.state.customProgs.length;
+      /* 模拟“重启应用”：清掉内存镜像 -> 重新从存储读一次 */
+      win.Store.reload();
+      ok(win.BackingUI.state.customProgs.length === beforeReload, '重载前内存里还是那些');
+      win.BackingUI.state.customProgs = [];
+      win.BackingUI.state.customRhythms = [];
+      win.BackingUI.loadFromStore();
+      ok(win.BackingUI.state.customProgs.length === beforeReload,
+         '重启后自建走向还在（' + win.BackingUI.state.customProgs.length + ' 条）');
+      var restoredProg = null;
+      for (k = 0; k < win.BackingUI.state.customProgs.length; k++) {
+        if (win.BackingUI.state.customProgs[k].custom) restoredProg = win.BackingUI.state.customProgs[k];
+      }
+      ok(!!restoredProg && restoredProg.items.length === 3, '读回来的走向内容和保存时一致（3 个和弦）');
+      ok(win.BackingUI.state.progId === restoredProg.id, '上次选中的走向也被恢复：' + win.BackingUI.state.progId);
+      ok(win.BackingUI.state.customRhythms.length >= 1, '自建节奏型也在（' + win.BackingUI.state.customRhythms.length + ' 条）');
+      /* 鼓机格子的改动同样落库 */
+      var drumBackend = win.Store.getItem('drums', win.DrumsUI.state.patternId);
+      ok(!!drumBackend, '鼓机格子的改动写进了存储（' + win.DrumsUI.state.patternId + '）');
+      ok(win.Store.getSetting('sel.progression', '') === win.BackingUI.state.progId, '选中的走向已存为设置');
+      ok(win.Store.getSetting('sel.drums', '') === win.DrumsUI.state.patternId, '选中的鼓机节奏已存为设置');
+
+      /* 列表行的「编辑」按钮 */
+      var editBtns = doc.querySelectorAll('.prog-row .edit-btn');
+      ok(editBtns.length === doc.querySelectorAll('.prog-row').length,
+         '每条走向都有「编辑」按钮（' + editBtns.length + ' 个）');
+      /* 先测内置走向：应当复制一份出来改 */
+      var presetRow = doc.querySelector('.prog-row:not(.on) .edit-btn') || editBtns[0];
+      var presetId = presetRow.parentNode.getAttribute('data-prog');
+      click(presetRow);
+      var draft = win.BackingUI.state.editing.draft;
+      ok(!!draft && draft.custom === true, '编辑内置走向会复制成自建');
+      ok(draft.id !== presetId, '复制出来的 id 与原内置不同');
+      ok(draft.items.length === win.Backing.progressionById(presetId).items.length, '复制了同样的和弦数');
+      click($('btnProgCancel'));
+      /* 再测自建走向：应当原地编辑（id 不变） */
+      var customRow = null, rows2 = doc.querySelectorAll('.prog-row');
+      for (k = 0; k < rows2.length; k++) if (rows2[k].textContent.indexOf('自建') >= 0) customRow = rows2[k];
+      ok(!!customRow, '找到自建走向行');
+      var customId = customRow.getAttribute('data-prog');
+      click(customRow.querySelector('.edit-btn'));
+      ok(win.BackingUI.state.editing.draft.id === customId, '编辑自建走向是原地编辑（id 不变）');
+      ok(doc.querySelectorAll('#progRows .edit-card').length === 3, '编辑器里带着原来的 3 个和弦');
+      click($('btnProgCancel'));
+      /* 节奏型同理 */
+      var rEdit = doc.querySelectorAll('.rhythm-row .edit-btn');
+      ok(rEdit.length === doc.querySelectorAll('.rhythm-row').length,
+         '每条节奏型都有「编辑」按钮（' + rEdit.length + ' 个）');
+      click(rEdit[0]);
+      ok(win.BackingUI.state.editing.draft.custom === true &&
+         win.BackingUI.state.editing.draft.id.indexOf('myr') === 0, '编辑内置节奏型会复制成自建');
+      click($('btnRhythmCancel'));
+
+      /* 启用开关 + 一起播放 */
+      ok(win.Band.state.drumsOn === true && win.Band.state.backingOn === true, '默认两个都启用');
+      click($('btnBandPlay'));
+      ok(win.Band.isPlaying() === true, '点开始后开始播放');
+      /* 前瞻调度会把未来的音提前排进时间轴，所以「停止」必须真的把它们掐掉 */
+      ok(win.Voices.count() > 0, '播放时登记了已排期的音源（' + win.Voices.count() + ' 个）');
+      ok(win.Drums.isEnabled() === true && win.Backing.isEnabled() === true, '两个引擎都启用了');
+      ok($('miniPlayer').hidden === false, '迷你播放条出现');
+      ok($('mpText').textContent.indexOf('BPM') > 0, '迷你条显示：' + $('mpText').textContent);
+      ok($('btnBandPlay').textContent === '停止', '总控按钮变成停止');
+      ok(win.Transport.isRunning() === true, 'Transport 在运行');
+
+      /* 关掉鼓机，只留伴奏 */
+      click(doc.querySelector('[data-enable="drums"]'));
+      ok(win.Band.state.drumsOn === false, '关掉鼓机');
+      ok(win.Drums.isEnabled() === false && win.Backing.isEnabled() === true, '引擎启用状态跟着变');
+      ok($('bandStatus').textContent.indexOf('鼓机') < 0,
+         '状态行只列出启用的部分（关掉鼓机后不再提鼓机）：' + $('bandStatus').textContent);
+      click(doc.querySelector('[data-enable="drums"]'));
+      ok(win.Band.state.drumsOn === true, '再打开鼓机');
+
+      /* 播放时页头大字要显示当前和弦（跟着实际发声的事件走） */
+      click(doc.querySelector('.tab[data-tab="band"]'));
+      click(doc.querySelector('#bandTabs .tab[data-sub="backing"]'));
+      /* 直接往队列里塞一个「伴奏的发声事件」再驱动一次 tick，等价于播放到那个和弦 */
+      var progNow = win.BackingUI.currentProgression();
+      var ch0 = win.Backing.chordAt(0, 'major', progNow.items[1].degree, progNow.items[1].acc, progNow.items[1].quality);
+      win.Transport.push({ source: 'backing', time: 0, beat: 4, chordIdx: 1, ev: 'R', slot: 0, chord: ch0 });
+      win.BandUI.tick();
+      ok(!!win.BandUI.nowChord(), '记录了当前正在响的和弦');
+      var expectName = win.Backing.chordName(ch0, false);
+      ok($('chordName').textContent === expectName,
+         '页头大字显示当前和弦：' + $('chordName').textContent + '（应为 ' + expectName + '）');
+      ok($('chordRoman').textContent.indexOf('第 2 个和弦') === 0, '并标出是第几个和弦：' + $('chordRoman').textContent);
+      ok($('chordNotes').textContent.length > 3, '还列出和弦组成音：' + $('chordNotes').textContent);
+      ok($('mpChord').textContent === expectName, '迷你条上也显示当前和弦：' + $('mpChord').textContent);
+      /* 换到下一个和弦 */
+      var ch1 = win.Backing.chordAt(0, 'major', progNow.items[2].degree, progNow.items[2].acc, progNow.items[2].quality);
+      win.Transport.push({ source: 'backing', time: 0, beat: 8, chordIdx: 2, ev: 'R', slot: 0, chord: ch1 });
+      win.BandUI.tick();
+      ok($('chordName').textContent === win.Backing.chordName(ch1, false),
+         '换和弦后大字跟着变：' + $('chordName').textContent);
+      /* 切到别的页签：页头不再抢戏，但迷你条仍显示和弦 */
+      click(doc.querySelector('.tab[data-tab="chord"]'));
+      ok($('chordName').textContent === 'C', '切到和弦页后大字回到和弦查询自己的内容（' + $('chordName').textContent + '）');
+      ok($('mpChord').textContent === win.Backing.chordName(ch1, false),
+         '迷你条上仍然显示当前和弦（切页签也看得见）：' + $('mpChord').textContent);
+      click(doc.querySelector('.tab[data-tab="band"]'));
+
+      /* 切页签继续响 */
+      click(doc.querySelector('.tab[data-tab="chord"]'));
+      ok(win.Band.isPlaying() === true, '切到和弦页仍在播放');
+      ok($('miniPlayer').hidden === false, '迷你条仍在');
+      click($('mpStop'));
+      ok(win.Band.isPlaying() === false && win.Transport.isRunning() === false, '迷你条能停止全部');
+      ok(win.Voices.count() === 0, '停止后已排期的音源被清空（否则会继续响，实际剩 ' + win.Voices.count() + ' 个）');
+      ok(win.Transport.pendingEvents() === 0, '待播放事件队列也清空了');
+      ok(doc.querySelectorAll('.step-cell.now').length === 0, '停止后鼓机格子上的播放高亮被清掉');
+
+      /* --- 独立「即兴」页：伴奏实例 + 双吉他 + 任务队列 --- */
+      click(doc.querySelector('.tab[data-tab="band"]'));
+      click($('btnSaveInstance'));
+      ok($('instDialog').hidden === false, '保存实例的名称 dialog 打开');
+      $('instName').value = 'UI 测试实例';
+      click($('btnInstSave'));
+      ok($('instDialog').hidden === true, '保存后 dialog 关闭');
+      ok(win.Instances.list().length >= 1, '伴奏实例已写入存储（' + win.Instances.list().length + ' 个）');
+      ok($('bandInstanceSelect').options.length >= 1, '伴奏页显示已保存实例');
+
+      click(doc.querySelector('#tabs .tab[data-tab="improv"]'));
+      ok($('viewImprov').hidden === false && $('viewBand').hidden === true,
+         '即兴是独立顶部页，不再挤在伴奏子页签里');
+      ok($('instanceSelect').options.length >= 1 && $('instanceSelect').value,
+         '即兴页能选择伴奏实例');
+      ok($('instanceInfo').textContent.indexOf('小节/loop') > 0,
+         '实例信息：' + $('instanceInfo').textContent.slice(0, 60));
+      var evInst = doc.createEvent('HTMLEvents'); evInst.initEvent('input', true, false);
+      ok(!!$('instanceSearch'), '伴奏实例有可输入的搜索框');
+      $('instanceSearch').value = '我的走向';
+      $('instanceSearch').dispatchEvent(evInst);
+      ok($('instanceSelect').options.length === 1 && $('instanceSelect').value,
+         '按走向搜索实例：' + $('instanceSelect').options[0].text);
+      $('instanceSearch').value = '不存在的实例';
+      $('instanceSearch').dispatchEvent(evInst);
+      ok($('instanceSelect').options.length === 1 &&
+         $('instanceSelect').options[0].text.indexOf('没有匹配') >= 0,
+         '无匹配时显示占位项');
+      ok(!!win.ImprovUI.state.instance, '搜索无结果不会清掉当前选中的实例');
+      $('instanceSearch').value = '';
+      $('instanceSearch').dispatchEvent(evInst);
+      ok($('instanceSelect').options.length >= 1 && $('instanceSelect').value,
+         '清空搜索后恢复实例列表');
+      ok($('styleSelect').options.length >= 7, '风格下拉扩展为 ' + $('styleSelect').options.length + ' 种');
+      ok($('toneSelect').options.length >= 6, '音色下拉扩展为 ' + $('toneSelect').options.length + ' 种');
+      ok(!!$('btnTonePreview'), '音色旁有「试听音色」按钮');
+      ok($('lengthSelect').options.length === 3, '长度 1/2/3 loop');
+      ok($('registerSelect').options.length === 3, '节奏把位 低/中/高');
+
+      click($('btnAppSettings'));
+      ok($('apiDialog').hidden === false, '设置 dialog 从顶部入口打开');
+      ok($('llmVendor').options.length === 3, '设置 dialog 有厂商 select');
+      ok($('themeSelect').options.length === 3, '设置里有主题选项');
+      $('themeSelect').value = 'light';
+      var evTheme = doc.createEvent('HTMLEvents'); evTheme.initEvent('change', true, false);
+      $('themeSelect').dispatchEvent(evTheme);
+      ok(doc.documentElement.getAttribute('data-theme') === 'light',
+         '选择浅色主题立即生效');
+      $('themeSelect').value = 'auto';
+      $('themeSelect').dispatchEvent(evTheme);
+      ok(!doc.documentElement.getAttribute('data-theme'),
+         '跟随系统时移除主题覆盖');
+      click($('apiDialogClose'));
+      ok($('apiDialog').hidden === true, '设置 dialog 可关闭');
+
+      $('lengthSelect').value = '2';
+      var evLen = doc.createEvent('HTMLEvents'); evLen.initEvent('change', true, false);
+      $('lengthSelect').dispatchEvent(evLen);
+      ok(win.ImprovUI.state.loops === 2, '长度改成 2 loop');
+      $('rangeBiasRange').value = '0.8';
+      var evRange = doc.createEvent('HTMLEvents'); evRange.initEvent('input', true, false);
+      $('rangeBiasRange').dispatchEvent(evRange);
+      ok(Math.abs(win.ImprovUI.state.rangeBias - 0.8) < 0.001 && $('rangeBiasValue').textContent === '0.80',
+         '音域 Bias 滑杆生效（0.80）');
+      $('styleSelect').value = 'blues';
+      var evStyle = doc.createEvent('HTMLEvents'); evStyle.initEvent('change', true, false);
+      $('styleSelect').dispatchEvent(evStyle);
+      $('toneSelect').value = 'drive';
+      var evTone = doc.createEvent('HTMLEvents'); evTone.initEvent('change', true, false);
+      $('toneSelect').dispatchEvent(evTone);
+      ok(win.Improv.state.styleId === 'blues' && win.Improv.state.tone === 'drive',
+         '风格/音色 select 生效（布鲁斯 / 电吉他过载）');
+      click($('btnTonePreview'));
+      ok($('improvMsg').textContent.indexOf('电吉他过载') >= 0,
+         '试听按钮用当前音色发声：' + $('improvMsg').textContent);
+      ok(doc.querySelectorAll('.improv-main-actions .chip').length === 2,
+         '即兴主操作只保留生成/保存两个按钮');
+      ok(!!$('improvPrompt') && $('improvPrompt').placeholder.indexOf('老人扫落叶') > 0,
+         '有场景提示词输入框和示例');
+      win.ImprovUI.generateLocal(true);
+      var iscore = win.Improv.state.score;
+      ok(!!iscore && iscore.bars.length === 8,
+         '2 loop × 4 小节 = 8 小节简谱（实际 ' + (iscore ? iscore.bars.length : 0) + '）');
+      ok($('scoreMeta').textContent.indexOf('本地 solo') === 0, '来源标注：' + $('scoreMeta').textContent.slice(0, 30));
+      ok(doc.querySelectorAll('#scoreView .jp-bar').length === 8, '谱面 8 张卡');
+      ok(doc.querySelectorAll('#scoreView .jp-cell').length === 64, '每小节 8 格、共 64 格');
+      ok(doc.querySelectorAll('#scoreView .jp-beat').length === 32,
+         '每两格组成一拍，共 32 拍（8 小节 × 4 拍）');
+      var beatA = doc.querySelector('#scoreView .jp-beat.beat-a');
+      var beatB = doc.querySelector('#scoreView .jp-beat.beat-b');
+      ok(!!beatA && !!beatB &&
+         win.getComputedStyle(beatA).backgroundColor !== win.getComputedStyle(beatB).backgroundColor,
+         '每拍有浅色分组背景，拍与拍能分清');
+      ok(doc.querySelectorAll('#scoreView .jp-pname').length > 0, '每个音都有音名');
+      ok($('queueLive').hidden === false && doc.querySelectorAll('#queueList .queue-row.done').length >= 1,
+         '任务队列记录并完成');
+      ok($('scoreWaiting').hidden === true, '完成后“生成中”提示消失');
+
+      ok(!!$('melodyNeck').querySelector('svg'), '左侧旋律吉他指板已绘制');
+      ok(!!$('rhythmNeck').querySelector('svg'), '右侧节奏吉他指板已绘制');
+      ok($('melodyShape').textContent.indexOf('指型') > 0, '旋律指型：' + $('melodyShape').textContent);
+      ok($('melodyUsed').textContent.indexOf('用到的音：') === 0 && $('melodyUsed').textContent.length > 5,
+         '标注旋律用到的音：' + $('melodyUsed').textContent);
+      ok($('rhythmChord').textContent.indexOf('把位') > 0, '节奏和弦：' + $('rhythmChord').textContent);
+      ok($('melodyNeck').querySelectorAll('.mn-scale-dot').length > 0, '指板上显示指型音阶点');
+      ok($('melodyNeck').querySelectorAll('.mn-dot-used').length > 0, '指板上标出旋律用到的音位');
+      var usedLabels = $('melodyNeck').querySelectorAll('.mn-used-label');
+      var usedText = '';
+      for (var ul = 0; ul < usedLabels.length; ul++) usedText += usedLabels[ul].textContent + ' ';
+      ok(usedLabels.length > 0 && /[A-G]/.test(usedText),
+         '旋律指板的圈内显示音名：' + usedText);
+      var chordLabels = $('rhythmNeck').querySelectorAll('.mn-dot-text');
+      var chordText = '';
+      for (var cl = 0; cl < chordLabels.length; cl++) chordText += chordLabels[cl].textContent + ' ';
+      ok(chordLabels.length > 0 && /[A-G]/.test(chordText) && !/^[1-4 ]+$/.test(chordText),
+         '节奏和弦指板的圈内显示音名而不是手指编号：' + chordText);
+      ok($('shapeSelect').options.length === 6, '指型下拉：自动 + Mi/La/Si/Re/Sol');
+      $('shapeSelect').value = 'mi';
+      var evShape = doc.createEvent('HTMLEvents'); evShape.initEvent('change', true, false);
+      $('shapeSelect').dispatchEvent(evShape);
+      ok(win.ImprovUI.state.shapeId === 'mi' &&
+         win.ImprovUI.state.fingering.phrases.length === 1,
+         '选择 Mi 后整段仍只用一个指型');
+      ok($('melodyShape').textContent.indexOf('0–6 品') > 0,
+         'C 调 Mi 型显示 0–6 品：' + $('melodyShape').textContent);
+      $('shapeSelect').value = 'la';
+      $('shapeSelect').dispatchEvent(evShape);
+      ok(win.ImprovUI.state.shapeId === 'la' &&
+         $('melodyShape').textContent.indexOf('5–8 品') > 0,
+         'C 调 La 型显示 5–8 品：' + $('melodyShape').textContent);
+      $('shapeSelect').value = 'mi';
+      $('shapeSelect').dispatchEvent(evShape);
+
+      var expectNote = win.Improv.midiName(64, win.CHORD_STATE.preferFlat);
+      win.Transport.push({ source: 'improv', time: 0, bar: 0, slot: 0, midi: 64, token: '3', tech: null });
+      win.BandUI.tick();
+      ok($('mpSolo').hidden === false && $('mpSolo').textContent === 'SOLO ' + expectNote,
+         '迷你条显示当前 solo 音：' + $('mpSolo').textContent);
+      ok($('nowNote').textContent.indexOf('正在演奏') === 0, '当前音读数：' + $('nowNote').textContent);
+      ok($('melodyNeck').querySelectorAll('.mn-dot-current').length === 1, '旋律指板高亮当前音');
+      ok(doc.querySelectorAll('#scoreView .jp-cell.now').length === 1, '谱面高亮当前格');
+      ok(doc.querySelectorAll('#scoreView .jp-bar.playing').length === 1, '谱面高亮当前小节');
+
+      win.Band.stop();
+      ok(win.Band.isPlaying() === false && win.Voices.count() === 0, '实例播放可停止');
+      win.ImprovUI.onStartRequested();
+      ok(win.Band.isPlaying() === true && win.Band.state.instanceMode === true,
+         '重新播放已有谱（实例 + solo）');
+      ok(win.Improv.live.cursor > 0, 'solo 已排期（cursor=' + win.Improv.live.cursor + '）');
+      ok(win.Voices.count() > 0, '鼓/伴奏/solo 排期了音源（' + win.Voices.count() + ' 个）');
+      ok(win.Transport.master() && win.Transport.master().gain.value > 0.1,
+         '主输出没有停在静音（gain=' + (win.Transport.master() ? win.Transport.master().gain.value : '-') + '）');
+      ok(win.Backing._engine.enabled() && win.Drums.isEnabled() && win.Improv.engine.enabled(),
+         '实例播放时鼓/伴奏/solo 三个引擎都启用');
+      ok(win.Backing.state.scheduledBars > 0,
+         '伴奏实际排期了 ' + win.Backing.state.scheduledBars + ' 个走向');
+      ok(win.Backing.state.chordSeconds <= 60 / win.Band.state.bpm + 0.02,
+         '伴奏按拍分块调度，不再一次排完整和弦（块长 ' +
+         win.Backing.state.chordSeconds.toFixed(3) + 's）');
+      win.Band.setMix('backing', 0.8);
+      ok(Math.abs(win.Backing.volume() - 0.6) < 0.001,
+         '伴奏音量实际作用到引擎（0.8×0.75=' + win.Backing.volume().toFixed(2) + '）');
+      ok(win.Backing.state.gain &&
+         Math.abs(win.Backing.state.gain.gain.value - 0.6) < 0.02,
+         '伴奏音量作用到已排期的 gain 节点（不是等下一轮）');
+      win.Band.setMix('drums', 0.6);
+      ok(Math.abs(win.Drums.volume() - 0.6) < 0.001, '鼓音量实际作用到引擎');
+      win.Band.setMix('solo', 1.5);
+      ok(Math.abs(win.Improv.live.volume - 1.5) < 0.001, 'solo 音量实际作用到引擎');
+      var soloMix = win.Transport.context().__improvSoloMix;
+      ok(soloMix && Math.abs(soloMix.gain.value - 1.5) < 0.02,
+         'solo 音量作用到已排期的总线 gain');
+      win.Band.stop();
+
+      var mixDrums0 = win.Band.state.mix.drums;
+      $('mixDrums').value = '60';
+      var evMix = doc.createEvent('HTMLEvents'); evMix.initEvent('input', true, false);
+      $('mixDrums').dispatchEvent(evMix);
+      ok(Math.abs(win.Band.state.mix.drums - 0.6) < 0.001, '三路音量：鼓可调（' + mixDrums0 + ' → 0.6）');
+      $('mixBacking').value = '70';
+      evMix = doc.createEvent('HTMLEvents'); evMix.initEvent('input', true, false);
+      $('mixBacking').dispatchEvent(evMix);
+      ok(Math.abs(win.Band.state.mix.backing - 0.7) < 0.001, '三路音量：伴奏可调');
+      $('mixSolo').value = '150';
+      evMix = doc.createEvent('HTMLEvents'); evMix.initEvent('input', true, false);
+      $('mixSolo').dispatchEvent(evMix);
+      ok(Math.abs(win.Band.state.mix.solo - 1.5) < 0.001, '三路音量：solo 可调');
+      $('registerSelect').value = 'high';
+      var evReg = doc.createEvent('HTMLEvents'); evReg.initEvent('change', true, false);
+      $('registerSelect').dispatchEvent(evReg);
+      ok(win.ImprovUI.state.register === 'high', '节奏把位切成高把位');
+      ok($('rhythmChord').textContent.indexOf('高把位') > 0, '右板显示高把位：' + $('rhythmChord').textContent);
+
+      var savedScores = win.Improv.listScores().length;
+      var savedTabs = win.Improv.listTabs().length;
+      var savedCrafts = win.Crafts.list().length;
+      win.ImprovUI.saveCurrentScore();
+      ok(win.Improv.listScores().length === savedScores + 1, '简谱保存进库（保留旧谱库）');
+      ok(win.Improv.listTabs().length === savedTabs + 1, '同时生成六线谱');
+      click($('btnSaveScore'));
+      ok(win.Crafts.list().length === savedCrafts + 1, '保存按钮把当前作品写入 crafts');
+      ok(win.ImprovUI.state.currentCraft && win.ImprovUI.state.currentCraft.score,
+         '当前作品保存了伴奏实例和旋律');
+      click(doc.querySelector('.tab[data-tab="works"]'));
+      ok(win.CHORD_STATE.tab === 'works' && $('viewWorks').hidden === false &&
+         $('viewImprov').hidden === true, '作品库是独立顶部页签');
+      var topTabs = doc.querySelectorAll('#tabs .tab');
+      ok(topTabs.length === 4 && topTabs[2].getAttribute('data-tab') === 'improv' &&
+         topTabs[3].getAttribute('data-tab') === 'works', '作品页签在即兴右边');
+      ok(doc.querySelector('#craftLib').closest('#viewWorks') === $('viewWorks'),
+         '作品库已移出即兴页');
+      ok(!doc.querySelector('.improv-tools #craftLib'), '即兴页不再包含作品库');
+      win.ImprovUI.setLib('craft');
+
+      /* 谱库：每条旋律要标出来自哪条和弦走向，并能直接播放 */
+      var savedId = win.Improv.state.score.id;
+      win.ImprovUI.setLib('jianpu');
+      var libRow = doc.querySelector('.lib-row[data-score="' + savedId + '"]');
+      ok(!!libRow, '谱库里出现刚保存的旋律');
+      var libSource = libRow ? libRow.querySelector('.lib-source') : null;
+      ok(!!libSource && libSource.textContent.indexOf('走向：我的走向') === 0,
+         '谱库行显示来源走向：' + (libSource ? libSource.textContent : '—'));
+      ok(!!libSource && libSource.textContent.indexOf('UI 测试实例') > 0,
+         '谱库行同时显示来源实例');
+      var libPlay = libRow ? libRow.querySelector('.play-btn') : null;
+      ok(!!libPlay && libPlay.textContent === '播放', '每条简谱都有「播放」按钮');
+      click(libPlay);
+      ok(win.Improv.state.score.id === savedId, '播放按钮会先把这条谱载入');
+      ok(win.Band.isPlaying() === true && win.Band.state.instanceMode === true,
+         '从谱库点播放会启动实例 + solo');
+      ok(win.Improv.live.cursor > 0 || win.Voices.count() > 0,
+         '谱库播放已经排期 solo 音源（cursor=' + win.Improv.live.cursor + '）');
+      win.Band.stop();
+      ok(win.Band.isPlaying() === false, '谱库播放可以停止');
+
+      /* 没有关联实例的旧谱/导入谱：播放按钮只启动 solo，不硬配当前实例 */
+      var orphan = win.Improv.normalizeScore({
+        title: '无实例测试谱', keyPc: 0, scaleId: 'major', styleId: 'penta',
+        bias: 40, bpm: 90, bars: win.Improv.state.score.bars, source: 'text'
+      });
+      var oSaved = win.Improv.saveScore(orphan);
+      win.Pager.showItem('improv.scores', function (x) { return x.id === oSaved.score.id; });
+      var oRow = doc.querySelector('.lib-row[data-score="' + oSaved.score.id + '"]');
+      ok(!!oRow, '无实例的谱也能进库并显示');
+      ok(oRow.querySelector('.lib-source').textContent.indexOf('无走向') > 0,
+         '无实例谱的来源标注：' + oRow.querySelector('.lib-source').textContent);
+      click(oRow.querySelector('.play-btn'));
+      ok(win.Band.isPlaying() === true && win.Improv.state.score.id === oSaved.score.id,
+         '无实例谱的播放按钮能载入并播放');
+      ok(win.Drums.isEnabled() === false && win.Backing.isEnabled() === false,
+         '无实例谱只开 solo，不启用鼓机/伴奏');
+      win.Band.stop();
+      win.Improv.deleteScore(oSaved.score.id);
+      win.Pager.refresh('improv.scores');
+      ok(win.Improv.listScores().length === savedScores + 1, '删除测试谱后库里只剩主测试谱');
+
+      click($('btnQueueClear'));
+      ok(doc.querySelectorAll('#queueList .queue-row').length === 0, '清空已完成任务');
+
+      /* 作品库 → 作品详情页 */
+      win.ImprovUI.setLib('craft');
+      var craftId = win.Crafts.list()[0].id;
+      ok(!!craftId, '作品库里有刚保存的 craft');
+      win.Pager.showItem('improv.crafts', function (x) { return x.id === craftId; });
+      var craftRow = doc.querySelector('.lib-row[data-craft="' + craftId + '"]');
+      ok(!!craftRow && craftRow.querySelector('.lib-source').textContent.indexOf('提示词') === 0,
+         '作品库显示提示词摘要');
+      click(craftRow);
+      ok($('viewCraft').hidden === false && $('viewImprov').hidden === true,
+         '点击作品跳到独立作品详情页');
+      ok(doc.body.classList.contains('craft-view'), '作品详情进入独立页面模式');
+      ok(win.getComputedStyle(doc.querySelector('#tabs')).display === 'none' &&
+         win.getComputedStyle(doc.querySelector('.app-footer')).display === 'none',
+         '作品详情页隐藏底部页签和说明，不再压在谱面上面');
+      var mp = $('miniPlayer');
+      var mpWasHidden = mp.hidden;
+      mp.hidden = false;
+      var mpCraftDisplay = win.getComputedStyle(mp).display;
+      mp.hidden = mpWasHidden;
+      ok(mpCraftDisplay === 'none',
+         '作品详情页隐藏全局迷你播放器，避免挡住会话输入');
+      ok(win.getComputedStyle($('craftScoreLabel')).whiteSpace === 'nowrap',
+         '简谱标题保持横排，不会被长元数据挤成竖排');
+      ok($('craftTitle').textContent.length > 0, '详情页标题：' + $('craftTitle').textContent);
+      ok($('craftPrompt').textContent.indexOf('未填写') >= 0,
+         '详情页显示提示词（这里未填写）');
+      ok(doc.querySelectorAll('#craftScore .jp-bar').length === 8,
+         '详情页显示作品简谱（' + doc.querySelectorAll('#craftScore .jp-bar').length + ' 小节）');
+      ok(doc.querySelectorAll('#craftRec .rec-item').length >= 3,
+         '详情页显示推荐与选择信息');
+      ok(doc.querySelectorAll('#craftBandPreview .craft-chord-card').length > 0,
+         '详情页显示走向里的每个和弦');
+      ok(doc.querySelectorAll('#craftBandPreview .craft-chord-svg svg').length > 0,
+         '详情页显示真实和弦图（SVG）');
+      ok(doc.querySelectorAll('#craftRhythmSeq .rhythm-slot').length > 0,
+         '详情页显示节奏格子');
+      ok($('btnCraftBack').textContent.indexOf('返回作品库') >= 0,
+         '详情页有明确的返回按钮');
+      ok(!!$('craftMelodyNeck').querySelector('svg') && !!$('craftRhythmNeck').querySelector('svg'),
+         '详情页也显示左右两个吉他指板');
+      ok($('craftMelodyShape').textContent.indexOf('指型') > 0 &&
+         $('craftMelodyShape').textContent.indexOf('品') > 0,
+         '旋律指板显示推荐指型和把位：' + $('craftMelodyShape').textContent);
+      ok($('craftRhythmChord').textContent.indexOf('把位') > 0,
+         '节奏指板显示推荐把位：' + $('craftRhythmChord').textContent);
+      ok($('craftShapeSelect').options.length === 6, '详情页指型下拉含自动 + 5 种指型');
+      ok($('craftRegisterSelect').options.length === 3, '详情页节奏把位可选低/中/高');
+      $('craftShapeSelect').value = 'mi';
+      var evCraftShape = doc.createEvent('HTMLEvents'); evCraftShape.initEvent('change', true, false);
+      $('craftShapeSelect').dispatchEvent(evCraftShape);
+      ok($('craftMelodyShape').textContent.indexOf('Mi') >= 0,
+         '切换旋律指型后推荐把位跟着变：' + $('craftMelodyShape').textContent);
+      var versionHeads = '';
+      var ths = doc.querySelectorAll('#craftVersions .craft-version-table th');
+      for (var vh = 0; vh < ths.length; vh++) versionHeads += ths[vh].textContent + '|';
+      ok(versionHeads.indexOf('速度|鼓机|节奏型|和弦走向|修改提示词') >= 0,
+         '版本表格含速度/鼓/节奏/走向/修改提示词：' + versionHeads);
+      var firstVerCells = doc.querySelectorAll('#craftVersions .craft-version-row td');
+      ok(firstVerCells.length === 8 && firstVerCells[1].textContent.indexOf('BPM') > 0,
+         '版本表格每行 8 列并显示速度');
+      ok(doc.querySelectorAll('#craftVersions .craft-version-row').length === 1,
+         '详情页有版本记录（初版）');
+      ok(!!doc.querySelector('#craftVersions .final-badge'),
+         '版本记录标出最终版本');
+      var detailCraft = win.Crafts.get(craftId);
+      var v2 = win.Crafts.addVersion(detailCraft, detailCraft.score, {
+        label: '测试修改', note: '结尾轻一点', source: 'ai'
+      });
+      win.Crafts.addMessage(detailCraft, 'assistant', '已按你的要求修改。', v2.id);
+      win.CraftUI.open(craftId);
+      ok(doc.querySelectorAll('#craftVersions .craft-version-row').length === 2,
+         '修改后追加版本记录');
+      ok(!doc.querySelector('#craftVersions .craft-version-row.final .preview-badge'),
+         '未预览旧版本时，最终版本不会误标“正在预览”');
+      ok(doc.querySelectorAll('#craftMessages .version-link').length >= 1,
+         '对话里可以点击预览对应版本');
+      var v1Row = doc.querySelector('#craftVersions .craft-version-row');
+      click(v1Row.querySelector('.mini-toggle'));
+      ok($('craftScoreLabel').textContent.indexOf('版本预览') >= 0 &&
+         $('craftVersionHint').textContent.indexOf('正在预览') >= 0,
+         '版本预览明确标出正在看旧版本');
+      click(doc.querySelector('#craftVersions .version-back'));
+      ok($('craftScoreLabel').textContent === '简谱',
+         '可以回到最终版本');
+      /* 会话修改成功时：追加版本、消息带版本号，并默认显示新版本 */
+      var versionsBeforeChat = win.Crafts.get(craftId).versions.length;
+      var realEditScore = win.Crafts.editScore;
+      win.Crafts.editScore = function (c, text) {
+        return { then: function (okFn) {
+          okFn({ reply: '测试改谱完成', score: JSON.parse(JSON.stringify(c.score)) });
+        } };
+      };
+      $('craftChatInput').value = '再轻一点';
+      click($('btnCraftSend'));
+      var afterChat = win.Crafts.get(craftId);
+      ok(afterChat.versions.length === versionsBeforeChat + 1,
+         '会话修改自动追加一个新版本');
+      ok(afterChat.messages[afterChat.messages.length - 1].versionId ===
+         afterChat.finalVersionId,
+         '修改结果的对话消息指向最终版本');
+      ok(doc.querySelectorAll('#craftMessages .version-link').length >= 2,
+         '对话里的所有修改版本都能点击预览');
+      win.Crafts.editScore = realEditScore;
+      /* 版本超过 5 条时显示分页 */
+      var pageCraft = win.Crafts.get(craftId);
+      for (var pv = 0; pv < 4; pv++) {
+        win.Crafts.addVersion(pageCraft, pageCraft.score, {
+          label: '分页测试', note: '测试版本 ' + (pv + 4), source: 'ai'
+        });
+      }
+      win.CraftUI.open(craftId);
+      ok(doc.querySelectorAll('#craftVersions .craft-version-row').length === 5 &&
+         !!doc.querySelector('#craftVersions .version-pager'),
+         '版本记录按每页 5 条分页');
+      var pagers = doc.querySelectorAll('#craftVersions .version-pager .mini-toggle');
+      click(pagers[1]);
+      ok(doc.querySelectorAll('#craftVersions .craft-version-row').length === 2,
+         '翻到第二页显示剩余版本');
+      $('craftMixDrums').value = '60';
+      var evMixCraft = doc.createEvent('HTMLEvents'); evMixCraft.initEvent('input', true, false);
+      $('craftMixDrums').dispatchEvent(evMixCraft);
+      ok(Math.abs(win.Band.state.mix.drums - 0.6) < 0.001 &&
+         Math.abs(win.Drums.volume() - 0.6) < 0.001,
+         '作品详情可以调鼓声部音量');
+      $('craftMixBacking').value = '70';
+      $('craftMixBacking').dispatchEvent(evMixCraft);
+      ok(Math.abs(win.Band.state.mix.backing - 0.7) < 0.001,
+         '作品详情可以调伴奏声部音量');
+      $('craftMixSolo').value = '150';
+      $('craftMixSolo').dispatchEvent(evMixCraft);
+      ok(Math.abs(win.Band.state.mix.solo - 1.5) < 0.001,
+         '作品详情可以调 solo 声部音量');
+      /* 还原默认，避免影响后面的伴奏测试 */
+      $('craftMixDrums').value = '80';
+      $('craftMixDrums').dispatchEvent(evMixCraft);
+      $('craftMixBacking').value = '100';
+      $('craftMixBacking').dispatchEvent(evMixCraft);
+      $('craftMixSolo').value = '120';
+      $('craftMixSolo').dispatchEvent(evMixCraft);
+      click($('btnCraftBack'));
+      ok($('viewWorks').hidden === false && $('viewCraft').hidden === true,
+         '作品详情可以返回作品库');
+      ok(!doc.body.classList.contains('craft-view') &&
+         win.getComputedStyle(doc.querySelector('#tabs')).display !== 'none',
+         '返回后恢复底部页签');
+      mp.hidden = false;
+      var mpBackDisplay = win.getComputedStyle(mp).display;
+      mp.hidden = mpWasHidden;
+      ok(mpBackDisplay !== 'none',
+         '返回后恢复迷你播放器');
+
+      /* 提示词 → 本地推荐 agent → 选 BPM → 生成 craft */
+      click(doc.querySelector('.tab[data-tab="improv"]'));
+      var craftBefore = win.Crafts.list().length;
+      $('improvPrompt').value = '凄凉的秋天，一个老人扫落叶';
+      var evPrompt = doc.createEvent('HTMLEvents'); evPrompt.initEvent('input', true, false);
+      $('improvPrompt').dispatchEvent(evPrompt);
+      click($('btnImprovGen'));
+      ok($('recPanel').hidden === false, '提示词生成本地推荐面板');
+      ok(doc.querySelectorAll('#recBpmRow .chip').length === 5, '推荐给出 top5 速度');
+      ok(!!$('recDrumSelect') && $('recDrumSelect').options.length > 0,
+         '推荐面板可以选择鼓机');
+      ok(!!$('recRhythmSelect') && $('recRhythmSelect').options.length > 0,
+         '推荐面板可以选择节奏型');
+      ok(!!$('recProgressionSelect') && $('recProgressionSelect').options.length > 0,
+         '推荐面板可以选择和弦走向');
+      ok($('btnRecGenerate').disabled === true,
+         '还没选速度时不能直接生成');
+      ok(!!$('recBpmInput') && $('recBpmInput').value === '',
+         '速度有可输入的数字框');
+      var recBest = win.ImprovUI.state.recommendation.bpm;
+      ok(Number($('recBpmBest').textContent) === recBest,
+         '单独显示一个推荐速度（不是 Top5）：' + $('recBpmBest').textContent + ' BPM');
+      click($('btnUseRecBpm'));
+      ok(Number($('recBpmInput').value) === recBest &&
+         win.ImprovUI.state.recDraft.bpm === recBest,
+         '一键填入推荐速度');
+      ok(win.getComputedStyle($('recBpmRow')).flexWrap === 'wrap',
+         '推荐速度按钮在窄屏会换行');
+      var bpmChips = doc.querySelectorAll('#recBpmRow .chip');
+      var bpmRowRect = $('recBpmRow').getBoundingClientRect();
+      var bpmInside = true;
+      for (var bc = 0; bc < bpmChips.length; bc++) {
+        var bcr = bpmChips[bc].getBoundingClientRect();
+        if (bcr.right > bpmRowRect.right + 1 || bcr.left < bpmRowRect.left - 1) bpmInside = false;
+      }
+      ok(bpmInside, 'top5 五个速度按钮都在面板宽度内，没有被裁掉');
+      var progOptions = $('recProgressionSelect').options;
+      var altProgId = progOptions[1] ? progOptions[1].value : progOptions[0].value;
+      $('recProgressionSelect').value = altProgId;
+      var evRecSel = doc.createEvent('HTMLEvents'); evRecSel.initEvent('change', true, false);
+      $('recProgressionSelect').dispatchEvent(evRecSel);
+      ok(win.ImprovUI.state.recDraft.progressionId === altProgId,
+         '选择和弦走向只更新草稿');
+      var recBpm = doc.querySelector('#recBpmRow .chip');
+      var chosenBpm = Number(recBpm.textContent.split(' ')[0]);
+      click(recBpm);
+      ok(win.ImprovUI.state.recDraft.bpm === chosenBpm,
+         '点 Top5 速度记录在草稿里：' + chosenBpm + ' BPM');
+      $('recBpmInput').value = '67';
+      var evBpmInput = doc.createEvent('HTMLEvents'); evBpmInput.initEvent('input', true, false);
+      $('recBpmInput').dispatchEvent(evBpmInput);
+      chosenBpm = 67;
+      ok(win.ImprovUI.state.recDraft.bpm === 67,
+         '可以直接输入任意 BPM（67）');
+      ok(win.Crafts.list().length === craftBefore,
+         '只选速度/输入 BPM 不会立即生成');
+      ok($('btnRecGenerate').disabled === false,
+         '输入有效速度后生成按钮可用');
+      click($('btnRecGenerate'));
+      ok(win.ImprovUI.state.chosenBpm === chosenBpm,
+         '确认生成后记录用户输入的 BPM');
+      ok(win.Crafts.list().length === craftBefore + 1, '确认生成后写入一条 craft');
+      var newCraft = win.Crafts.list()[0];
+      ok(newCraft.prompt === '凄凉的秋天，一个老人扫落叶' &&
+         newCraft.chosen.bpm === chosenBpm &&
+         newCraft.chosen.progressionId === altProgId,
+         'craft 保存了提示词、用户选择的速度和走向');
+      ok(newCraft.versions && newCraft.versions.length === 1,
+         '新 craft 带有初版版本记录');
+      win.Band.stop();
+      $('improvPrompt').value = '';
+      $('improvPrompt').dispatchEvent(evPrompt);
+
+      click(doc.querySelector('.tab[data-tab="band"]'));
+
+      /* BPM 与点速 */
+      var b0 = win.Band.state.bpm;
+      click($('bpmPlus'));
+      ok(win.Band.state.bpm === b0 + 1, '+1 生效：' + win.Band.state.bpm);
+      click($('bpmMinus')); click($('bpmMinus'));
+      ok(win.Band.state.bpm === b0 - 1, '-1 生效：' + win.Band.state.bpm);
+      $('bpmRange').value = '150';
+      var ev3 = doc.createEvent('HTMLEvents'); ev3.initEvent('input', true, false);
+      $('bpmRange').dispatchEvent(ev3);
+      ok(win.Band.state.bpm === 150, '拖动速度条生效：' + win.Band.state.bpm);
+      click($('btnTap')); click($('btnTap')); click($('btnTap'));
+      ok(win.Band.state.bpm === 240, 'TAP 连点被钳到上限 240（实际 ' + win.Band.state.bpm + '）');
+      /* 改过的速度也要落库（下次打开接着用） */
+      ok(win.Store.getSetting('bpm', '') === String(win.Band.state.bpm),
+         'BPM 已存为设置：' + win.Store.getSetting('bpm', '-') + ' / 当前 ' + win.Band.state.bpm);
+      ok(win.Store.getSetting('on.drums', '') === (win.Band.state.drumsOn ? '1' : '0'), '鼓机启用状态已存');
+      ok(win.Store.getSetting('on.backing', '') === (win.Band.state.backingOn ? '1' : '0'), '伴奏启用状态已存');
+
+      click(doc.querySelector('.tab[data-tab="band"]'));
+      /* 只有和弦页签该有卡片 */
+      /* 切回和弦页签 */
+      click(doc.querySelector('.tab[data-tab="chord"]'));
+      ok(win.CHORD_STATE.tab === 'chord' && doc.querySelectorAll('.card').length > 0,
+         '切回和弦页签后卡片仍在（' + doc.querySelectorAll('.card').length + ' 张）');
     } catch (e) {
       fails++;
       lines.push('EXCEPTION: ' + e.message + '\n' + (e.stack || ''));

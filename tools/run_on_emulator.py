@@ -78,6 +78,8 @@ def main():
     ap.add_argument("--api", type=int, default=34, help="系统镜像的 API 级别（默认 34）")
     ap.add_argument("--apk", help="APK 路径，默认 dist 下最新")
     ap.add_argument("--window", action="store_true", help="显示模拟器窗口")
+    ap.add_argument("--audio", action="store_true",
+                    help="启用模拟器音频输入（测调音/麦克风时需要；默认关闭以免占用主机音频）")
     ap.add_argument("--keep", action="store_true", help="跑完保留模拟器")
     ap.add_argument("--shots", type=int, default=3, help="截几张图（默认 3）")
     ap.add_argument("--timeout", type=int, default=420, help="等待开机的最长秒数")
@@ -125,7 +127,9 @@ def main():
     # 2) 启动模拟器
     print("[2/6] 启动模拟器（%s）..." % ("带窗口" if args.window else "无窗口，硬件加速"))
     cmd = [emulator, "-avd", avd_name, "-no-snapshot", "-no-boot-anim",
-           "-no-audio", "-gpu", "swiftshader_indirect", "-memory", "2048"]
+           "-gpu", "swiftshader_indirect", "-memory", "2048"]
+    if not args.audio:
+        cmd.append("-no-audio")
     if not args.window:
         cmd.append("-no-window")
     proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -57,6 +57,21 @@
   /* ---------- 2. 指法搜索：C 大三和弦 ---------- */
   var t0 = +new Date();
   var c = C.searchVoicings(0, C.qualityById('maj'), { maxFret: 24, span: 4, minSounding: 4, bassIsRoot: true });
+  var caged = C.cagedVoicings(c, 0, { maxFret: 24 });
+  ok(caged.length === 5 && caged.map(function (x) { return x.id; }).join('') === 'CAGED',
+     'CAGED 输出 C/A/G/E/D 五个指型');
+  ok(JSON.stringify(caged[0].frets) === JSON.stringify([-1, 3, 2, 0, 1, 0]),
+     'C 型 = 开放 C：' + caged[0].frets.join(' '));
+  ok(JSON.stringify(caged[1].frets) === JSON.stringify([-1, 3, 5, 5, 5, 3]),
+     'A 型 = x35553：' + caged[1].frets.join(' '));
+  ok(JSON.stringify(caged[2].frets) === JSON.stringify([8, 7, 5, 5, 5, 8]),
+     'G 型 = 8 7 5 5 5 8：' + caged[2].frets.join(' '));
+  ok(JSON.stringify(caged[3].frets) === JSON.stringify([8, 10, 10, 9, 8, 8]),
+     'E 型 = 8 10 10 9 8 8：' + caged[3].frets.join(' '));
+  ok(JSON.stringify(caged[4].frets) === JSON.stringify([-1, -1, 10, 12, 13, 12]),
+     'D 型 = xx 10 12 13 12：' + caged[4].frets.join(' '));
+  ok(caged[0].hasOpen === true && caged[2].rootString === 0 && caged[4].rootString === 2,
+     'CAGED 根音弦/空弦标记正确');
   var t1 = +new Date();
   info('C 大三和弦：找到 ' + c.length + ' 个指法，耗时 ' + (t1 - t0) + ' ms');
 

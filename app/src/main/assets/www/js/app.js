@@ -27,6 +27,7 @@
     preferFlat: false,      /* 是否用降号拼写 */
     openSheet: false,       /* 启动时是否直接展开条件面板（直达链接用） */
     selected: 0,            /* 当前高亮指法的下标（state.voicings 内） */
+    cagedShape: null,       /* 当前从 CAGED 卡片选中的形状 id */
     voicings: [],
     filtered: [],           /* [{v, index}] 过滤后的可见指法 */
     /* 调音相关 */
@@ -365,7 +366,7 @@
     $('neckBox').innerHTML = html;
 
     if (v) {
-      $('voicingLabel').textContent = voicingLabel(v);
+      $('voicingLabel').textContent = (state.cagedShape ? state.cagedShape + ' 型 · ' : '') + voicingLabel(v);
       var degs = [];
       for (var i = 0; i < v.notes.length; i++) {
         degs.push(C.intervalDegreeName(M.mod12(v.notes[i].pc - rootPc)));
@@ -387,6 +388,75 @@
       box.scrollLeft = target;
     } else if (centerOnSelection) {
       $('neckScroll').scrollLeft = 0;
+    }
+    updateCagedActive();
+  }
+
+
+  /* ----------------------------- CAGED 五种指型 ----------------------------- */
+  function cagedRootText(shape) {
+    if (!shape.voicing) return '这个筛选下没有代表指法';
+    var str = shape.rootString === 0 ? '6 弦' : (shape.rootString === 1 ? '5 弦' : '4 弦');
+    var pos = shape.hasOpen ? '含空弦' : (shape.position === 0 ? '开放把位' : '第 ' + shape.position + ' 把位');
+    return '根音 ' + str + ' ' + shape.rootFret + ' 品 · ' + pos;
+  }
+
+  function renderCaged() {
+    var row = $('cagedRow');
+    if (!row) return;
+    var rootPc = currentRootPc();
+    var q = currentQuality();
+    var shapes = C.cagedVoicings ? C.cagedVoicings(state.voicings, rootPc, {
+      maxFret: state.maxFret
+    }) : [];
+    clear(row);
+    var found = 0;
+    for (var i = 0; i < shapes.length; i++) {
+      (function (shape, si) {
+        if (!shape.voicing) {
+          row.appendChild(make('div', 'caged-empty', shape.zh + '：当前条件下没有代表指法'));
+          return;
+        }
+        found++;
+        var idx = state.voicings.indexOf(shape.voicing);
+        var card = make('div', 'caged-card' + (idx === state.selected ? ' on' : ''));
+        card.setAttribute('data-caged', shape.id);
+        card.setAttribute('data-index', String(idx));
+        card.setAttribute('title', 'CAGED ' + shape.zh + '：' + C.tabString(shape.voicing));
+        var head = make('div', 'caged-card-head');
+        head.appendChild(make('span', 'caged-shape', shape.id));
+        head.appendChild(make('span', 'caged-fret', shape.hasOpen ? '开放' : (shape.position === 0 ? '开放' : shape.position + ' 品')));
+        card.appendChild(head);
+        var box = make('div', 'caged-svg');
+        box.innerHTML = R.chordBox(shape.voicing, {
+          labelMode: state.labelMode,
+          preferFlat: state.preferFlat,
+          rootPc: rootPc
+        });
+        card.appendChild(box);
+        card.appendChild(make('div', 'caged-root', cagedRootText(shape)));
+        card.addEventListener('click', function () {
+          if (idx < 0) return;
+          selectVoicing(idx, true, shape.id);
+          if ($('neckSection') && $('neckSection').scrollIntoView) {
+            try { $('neckSection').scrollIntoView({ block: 'start' }); } catch (e) {}
+          }
+        });
+        row.appendChild(card);
+      })(shapes[i], i);
+    }
+    if ($('cagedCount')) $('cagedCount').textContent = found + ' / 5 个形状';
+    if ($('cagedHint')) {
+      $('cagedHint').textContent = '先记 5 个形状，再记每个形状的根音位置 · ' +
+        C.chordSymbol(rootPc, q, state.preferFlat);
+    }
+    updateCagedActive();
+  }
+
+  function updateCagedActive() {
+    var cards = document.querySelectorAll('#cagedRow .caged-card');
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].classList.toggle('on', Number(cards[i].getAttribute('data-index')) === state.selected);
     }
   }
 
@@ -519,8 +589,9 @@
   }
 
   /* ----------------------------- 选中某个指法 ----------------------------- */
-  function selectVoicing(index, scroll) {
+  function selectVoicing(index, scroll, cagedId) {
     state.selected = index;
+    state.cagedShape = cagedId || null;
     var cards = document.querySelectorAll('.card');
     for (var i = 0; i < cards.length; i++) {
       cards[i].classList.toggle('on', Number(cards[i].getAttribute('data-index')) === index);
@@ -558,7 +629,7 @@
       allowInnerMute: state.allowInnerMute,
       maxResults: 800
     });
-    if (!keepSelection) state.selected = 0;
+    if (!keepSelection) { state.selected = 0; state.cagedShape = null; }
     if (state.selected >= state.voicings.length) state.selected = state.voicings.length - 1;
     if (state.selected < 0) state.selected = 0;
 
@@ -572,6 +643,7 @@
     buildRanges();
     if (global.BackingUI) global.BackingUI.pushToEngine();
     renderHeader();
+    if (state.tab === 'chord') renderCaged();
     if (state.tab === 'tuner') {
       renderTuner();
     } else if (state.tab === 'band') {
@@ -1038,7 +1110,7 @@
       else if (name === 'works') {
         if (global.ImprovUI) global.ImprovUI.renderLibrary();
       }
-      else { renderResults(); renderNeck(false); }
+      else { renderCaged(); renderResults(); renderNeck(false); }
     }
     global.scrollTo(0, 0);
   }

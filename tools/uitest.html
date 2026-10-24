@@ -72,6 +72,20 @@
       var dots = doc.querySelectorAll('#neckBox .nk-dot');
       ok(dots.length >= 3, '指板上高亮 ' + dots.length + ' 个按弦点（x32010 = 3 个）');
       ok(doc.querySelector('#neckInfo').textContent.indexOf('x 3 2 0 1 0') > -1, '默认指法 = ' + doc.querySelector('#neckInfo').textContent);
+      var cagedCards = doc.querySelectorAll('#cagedRow .caged-card');
+      ok(cagedCards.length === 5, 'CAGED 默认展示 5 个代表指型');
+      var cagedIds = '';
+      for (var cc = 0; cc < cagedCards.length; cc++) cagedIds += cagedCards[cc].getAttribute('data-caged');
+      ok(cagedIds === 'CAGED', 'CAGED 顺序 = ' + cagedIds);
+      ok(cagedCards[0].querySelector('.caged-root').textContent.indexOf('根音 5 弦 3 品') >= 0,
+         'C 型标记根音位置：' + cagedCards[0].querySelector('.caged-root').textContent);
+      ok($('allVoicings').open === false, '全部上百个指法默认折叠，不干扰 CAGED');
+      ok(cagedCards[0].classList.contains('on'), '当前 C 型卡片高亮');
+      click(cagedCards[3]);
+      var cagedE = st.voicings[st.selected];
+      ok(win.Chord.tabString(cagedE) === '8 10 10 9 8 8',
+         '点 E 型会把指板切到该指型：' + win.Chord.tabString(cagedE));
+      ok($('neckInfo').textContent.indexOf('8 10 10 9 8 8') >= 0, '指板读数同步 E 型');
 
       /* --- 2. 换主调 --- */
       clickChip('key', 2);
@@ -274,6 +288,8 @@
           var intentional = String(cls).indexOf('neck-scroll') >= 0 ||
                             String(cls).indexOf('cards') >= 0 ||
                             String(cls).indexOf('chip-row') >= 0 ||
+                            String(cls).indexOf('caged-row') >= 0 ||
+                            String(cls).indexOf('craft-version-table-wrap') >= 0 ||
                             String(cls).indexOf('sheet-body') >= 0;
           if (!intentional) {
             var cs = win.getComputedStyle(el);

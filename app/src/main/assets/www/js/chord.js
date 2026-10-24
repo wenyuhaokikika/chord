@@ -365,6 +365,105 @@
     return parts.join(' ');
   }
 
+
+  /* ======================================================================
+   * CAGED：把现有合法指法归到 C / A / G / E / D 五个根音区域
+   *
+   * CAGED 不是五套互斥指法，而是五个可记忆的形状锚点：
+   *   C/A 型根音在 5 弦，G/E 型根音在 6 弦，D 型根音在 4 弦。
+   * 这里不硬编码 30 种属性的指法，而是从当前搜索出的合法指法里，
+   * 为每个区域挑一个代表，既保持可弹性，也避免用户面对上百张卡片。
+   * ==================================================================== */
+  function rootFretOnString(rootPc, stringIndex, maxFret) {
+    var pc = global.Music.mod12(rootPc);
+    for (var f = 0; f <= maxFret; f++) {
+      if (pcAt(stringIndex, f) === pc) return f;
+    }
+    return 0;
+  }
+
+  function bassStringOf(v) {
+    if (!v || !v.notes || !v.notes.length) return -1;
+    return v.notes[0].string;   /* notes 按 6→1 弦加入，第一条就是最低发声音 */
+  }
+
+  function cagedVoicings(voicings, rootPc, opts) {
+    opts = opts || {};
+    var maxFret = opts.maxFret === undefined ? 24 : opts.maxFret;
+    /* 弦编号与 TUNING 一致：0=低音 E，1=A，2=D，3=G，4=B，5=高音 e */
+    var r5 = rootFretOnString(rootPc, 1, maxFret);
+    var r4 = rootFretOnString(rootPc, 2, maxFret);
+    var r6 = rootFretOnString(rootPc, 0, maxFret);
+    /* G 型要往根音低 3 品伸展；根音在 0–2 品时用高八度位置。 */
+    var gRoot = (r6 < 3 && r6 + 12 <= maxFret) ? r6 + 12 : r6;
+    var used = {};
+    var list = voicings || [];
+
+    function pick(predicate, score) {
+      var best = null, bestScore = -1e9;
+      for (var i = 0; i < list.length; i++) {
+        var v = list[i];
+        if (used[v.frets.join(',')]) continue;
+        if (!predicate(v)) continue;
+        var sc = score(v);
+        if (sc > bestScore) { bestScore = sc; best = v; }
+      }
+      if (best) used[best.frets.join(',')] = true;
+      return best;
+    }
+
+    function openScore(v, openAllowed) {
+      return openAllowed ? (v.hasOpen ? 20 : 0) : (v.hasOpen ? -100 : 0);
+    }
+    var C = pick(function (v) {
+      return bassStringOf(v) === 1 && (v.hasOpen || v.position < r5);
+    }, function (v) {
+      /* 开放的 C 型最好记；其它把位优先靠近根音下方 3 品的形状。 */
+      var target = Math.max(0, r5 - 3);
+      return v.hasOpen * 100 + v.sounding * 2 - Math.abs(v.position - target) * 2;
+    });
+    var A = pick(function (v) { return bassStringOf(v) === 1; }, function (v) {
+      return openScore(v, r5 === 0) + v.sounding * 2 - Math.abs(v.position - r5) * 2;
+    });
+    var G = pick(function (v) {
+      return bassStringOf(v) === 0 && v.position < gRoot;
+    }, function (v) {
+      /* G 型是根音低 3 品起的大跨度形状；没有根音在 0–2 品时用高八度。 */
+      return openScore(v, gRoot === 3) + v.sounding * 2 -
+        Math.abs(v.position - Math.max(0, gRoot - 3)) * 2;
+    });
+    var E = pick(function (v) {
+      return bassStringOf(v) === 0 && v.position >= r6;
+    }, function (v) {
+      return openScore(v, r6 === 0) + v.sounding * 2 - Math.abs(v.position - r6) * 2;
+    });
+    var D = pick(function (v) {
+      return bassStringOf(v) === 2 && v.position >= r4;
+    }, function (v) {
+      return openScore(v, r4 === 0) + v.sounding * 2 - Math.abs(v.position - r4) * 2;
+    });
+    /* 极少数严格筛选下某个区域没有代表指法，保留空位，UI 会提示。 */
+    function shape(id, rootString, rootFret, v) {
+      return {
+        id: id,
+        zh: id + ' 型',
+        rootString: rootString,
+        rootFret: rootFret,
+        position: v ? v.position : null,
+        hasOpen: !!(v && v.hasOpen),
+        voicing: v || null,
+        frets: v ? v.frets : null
+      };
+    }
+    return [
+      shape('C', 1, r5, C),
+      shape('A', 1, r5, A),
+      shape('G', 0, gRoot, G),
+      shape('E', 0, r6, E),
+      shape('D', 2, r4, D)
+    ];
+  }
+
   /* 和弦完整名称 */
   function chordSymbol(rootPc, quality, preferFlat) {
     return global.Music.noteName(rootPc, preferFlat) + quality.symbol;
@@ -394,6 +493,7 @@
     chordSymbol: chordSymbol,
     chordToneNames: chordToneNames,
     intervalDegreeName: intervalDegreeName,
-    minPressedOf: minPressedOf
+    minPressedOf: minPressedOf,
+    cagedVoicings: cagedVoicings
   };
 })(window);

@@ -96,12 +96,27 @@ window.onerror = function (msg, src, line) {
   </section>
 
   <main class="results">
-    <div class="results-head">
-      <strong>全部指法</strong>
-      <span id="resultCount">0 个</span>
-    </div>
-    <div class="chip-row small" id="rangeChips"></div>
-    <div id="results"></div>
+    <section class="caged-panel" id="cagedPanel">
+      <div class="caged-head">
+        <div>
+          <strong>CAGED 五种指型</strong>
+          <span class="mini-hint" id="cagedHint">先记 5 个形状，再记每个形状的根音位置</span>
+        </div>
+        <span class="mini-hint" id="cagedCount"></span>
+      </div>
+      <div class="caged-row" id="cagedRow"></div>
+      <div class="caged-note">沿琴颈循环：<b>C → A → G → E → D</b>。C/A 根音在 5 弦，G/E 在 6 弦，D 在 4 弦；点卡片在指板上高亮。</div>
+    </section>
+
+    <details class="advanced caged-all" id="allVoicings">
+      <summary>全部指法（高级 / 更多按法）</summary>
+      <div class="results-head">
+        <strong>全部指法</strong>
+        <span id="resultCount">0 个</span>
+      </div>
+      <div class="chip-row small" id="rangeChips"></div>
+      <div id="results"></div>
+    </details>
   </main>
 </div>
 
@@ -553,6 +568,7 @@ window.onerror = function (msg, src, line) {
     <ol class="help">
       <li><b>和弦查询</b>：点顶部 <b>&#9881;</b> 打开条件面板，先选<b>主调</b>、再选<b>级数</b>（可加升降号），最后选<b>和弦属性</b>。</li>
       <li>“调内和弦”一排是当前调的自然和弦，点一下直接查询。</li>
+      <li><b>CAGED</b>：和弦页先看 C/A/G/E/D 五张代表指型卡，先记形状和根音位置；点卡片会在指板上高亮。需要更多按法时再展开「全部指法（高级）」。</li>
       <li>指板默认 24 品，可在条件面板里调整；点任意指法卡片可以在指板上高亮该指法。</li>
       <li><b>&#9664; / &#9654;</b> 在全部指法之间切换，<b>&#9834;</b> 试听当前指法（扫弦）。</li>
       <li><b>调音 · 音阶</b>：点右上角、设置左边的调音按钮，以 dialog 打开；先选主调与调式（点 <b>&#9881;</b>），再点“开始收音”；右上角「关闭」退出并释放麦克风。</li>

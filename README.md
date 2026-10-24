@@ -66,7 +66,8 @@ dist/ChordHelper-1.3.0.apk
 
 也可以直接从 GitHub Release 下载：
 
-- [ChordHelper-1.3.0.apk（推荐）](https://github.com/wenyuhaokikika/chord/releases/download/v1.3.0/ChordHelper-1.3.0.apk)
+- [ChordHelper-latest.apk（始终最新）](https://github.com/wenyuhaokikika/chord/releases/latest/download/ChordHelper-latest.apk)
+- [固定 v1.3.0 的 latest 别名](https://github.com/wenyuhaokikika/chord/releases/download/v1.3.0/ChordHelper-latest.apk)
 - [全部版本与 SHA256](https://github.com/wenyuhaokikika/chord/releases/tag/v1.3.0)
 
 > Release 页面底部自动生成的 `Source code (zip/tar.gz)` 是源码归档，不是 APK；安卓安装请点 `.apk` 文件。
